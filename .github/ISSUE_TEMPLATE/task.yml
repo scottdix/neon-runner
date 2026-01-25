@@ -1,0 +1,40 @@
+name: Task
+description: A standard work item
+title: "[Area] "
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Core
+        - Visuals
+        - Audio
+        - UI
+        - Gameplay
+        - Performance
+        - Infrastructure
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      value: |
+        - [ ] Criterion 1
+  - type: dropdown
+    id: effort
+    attributes:
+      label: Effort Estimate
+      options:
+        - "1 - Less than 2 hours"
+        - "2 - Half day"
+        - "3 - One day"
+        - "5 - 2-3 days"
+        - "8 - Week+"

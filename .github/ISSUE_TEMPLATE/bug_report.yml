@@ -1,0 +1,46 @@
+name: Bug Report
+description: Report a bug in the game
+title: "[Bug] "
+labels: ["type: bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      value: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Core
+        - Visuals
+        - Audio
+        - UI
+        - Gameplay
+        - Performance
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Critical - Game crashes
+        - High - Major feature broken
+        - Medium - Feature degraded
+        - Low - Minor inconvenience
+    validations:
+      required: true

@@ -1,0 +1,28 @@
+name: Epic
+description: A container for related work
+title: "[Epic] "
+labels: ["type: epic"]
+body:
+  - type: textarea
+    id: overview
+    attributes:
+      label: Overview
+    validations:
+      required: true
+  - type: textarea
+    id: success
+    attributes:
+      label: Success Criteria
+      value: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+    validations:
+      required: true
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks
+      description: Link child issues here
+      value: |
+        - [ ] #XX - Task 1
+        - [ ] #XX - Task 2
