@@ -1,0 +1,54 @@
+schema_version: 1
+# Solo project manifest — the session-memory heartbeat.
+# Read at /session-start, advanced at /handoff. History depth is 2
+# (notes + previous_notes); older history lives in git + docs/handoff/.
+last_updated:
+  date: "2026-06-20"
+  session: 1
+  notes: >
+    Session 1: Project-management bootstrap + an engine/performance design
+    decision. (1) Stood up a stripped-down solo PM layer modeled on the
+    waypoint-housing-portal system: PROJECT_STATE.yaml + docs/handoff/ +
+    three skills (/session-start, /handoff, /plan). Dropped everything
+    team/Linear/Supabase/Render/prod-hook/registry-script related — GitHub
+    Issues is the tracker (46 issues, 7 phase epics, 6 milestones already in
+    place). (2) DECISION: do NOT build a custom engine a la Geometry Wars.
+    The mobile concern (large/growing entity counts) is a batching problem,
+    not an engine problem — solve in Godot via MultiMeshInstance2D (one draw
+    call for thousands), GPUParticles2D, full-screen bloom (cost ~constant
+    regardless of count), and treating the projectile swarm as cosmetic
+    followers of ONE logical blob (collision stays near-constant). Plan: the
+    POC glow scene (#6) should double as a MultiMesh stress test on a real
+    mid-range phone before committing to Phase 3+.
+  previous_notes: >
+    (none — first session)
+
+# =============================================================================
+# FOCUS — one milestone, one issue at a time
+# =============================================================================
+focus:
+  active_milestone: "v0.1.0 - Proof of Concept"
+  active_epic: "#1 — Phase 1-2: Foundation & Project Architecture"
+  current_issue: "#2 — Initialize Godot 4.x project with folder structure"
+  next_issue: "#3 — Implement Events autoload (global event bus)"
+  notes: >
+    Phase 1-2 foundation work. Order within the epic: #2 (init project) →
+    #3 (Events) → #4 (GameState) → #5 (ObjectPool) → #6 (POC glow scene,
+    expanded into a MultiMesh stress test per the Session 1 engine decision).
+
+# =============================================================================
+# TRACKER
+# =============================================================================
+# GitHub Issues is the canonical task tracker (gh CLI).
+#   Epics:      type: epic   (one per implementation-plan phase)
+#   Milestones: v0.1.0 ... v1.0.0 (the version ladder)
+#   Labels:     type / priority / effort / status / area
+tracker:
+  kind: github-issues
+  repo: scottdix/neon-runner
+
+# =============================================================================
+# PROJECT REFERENCE
+# =============================================================================
+# Engine:  Godot 4.3+ (.NET build), GDScript-first
+# Plan:    IMPLEMENTATION_PLAN.md (7 phases, folder structure, code stubs)
