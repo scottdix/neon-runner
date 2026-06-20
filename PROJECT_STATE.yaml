@@ -4,24 +4,33 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-20"
-  session: 1
+  session: 2
   notes: >
+    Session 2: Migrated primary development to the mac-mini (ssh mac-mini, user
+    scottdix) — it becomes the headless dev box, and Claude Code runs NATIVELY
+    there inside a user-started tmux session (the M2 laptop is out of the loop).
+    Provisioned it userspace/no-Homebrew: repo cloned at ~/Documents/neon-runner,
+    Godot 4.7-mono at ~/Applications/Godot_mono.app (symlinked ~/.local/bin/godot,
+    runs headless), .NET SDK 8.0.422 at ~/.dotnet, PATH+DOTNET_ROOT in ~/.zshrc.
+    Already had Xcode 16.4 (iOS Sim), Android emulator/adb, node, gh, java.
+    Credentials verified: gh authed as scottdix (ADMIN; repo/workflow/gist/read:org),
+    wired as git credential helper, HTTPS push works. Stack confirmed: stay
+    Godot/.NET (EAS/emulator tooling was incidental). No project code yet — #2 not
+    started. ON THE MAC-MINI: git pull first, then /session-start. The mac-mini's
+    Claude has its own ~/.claude and won't see the laptop's memory — the repo
+    (PROJECT_STATE + docs/handoff) is the only cross-box context.
+  previous_notes: >
     Session 1: Project-management bootstrap + an engine/performance design
     decision. (1) Stood up a stripped-down solo PM layer modeled on the
     waypoint-housing-portal system: PROJECT_STATE.yaml + docs/handoff/ +
-    three skills (/session-start, /handoff, /plan). Dropped everything
-    team/Linear/Supabase/Render/prod-hook/registry-script related — GitHub
-    Issues is the tracker (46 issues, 7 phase epics, 6 milestones already in
-    place). (2) DECISION: do NOT build a custom engine a la Geometry Wars.
-    The mobile concern (large/growing entity counts) is a batching problem,
-    not an engine problem — solve in Godot via MultiMeshInstance2D (one draw
-    call for thousands), GPUParticles2D, full-screen bloom (cost ~constant
-    regardless of count), and treating the projectile swarm as cosmetic
-    followers of ONE logical blob (collision stays near-constant). Plan: the
+    three skills (/session-start, /handoff, /plan). GitHub Issues is the tracker
+    (46 issues, 7 phase epics, 6 milestones). (2) DECISION: do NOT build a custom
+    engine a la Geometry Wars. The mobile concern (large/growing entity counts) is
+    a batching problem, not an engine problem — solve in Godot via
+    MultiMeshInstance2D, GPUParticles2D, full-screen bloom (cost ~constant), and
+    treating the projectile swarm as cosmetic followers of ONE logical blob. The
     POC glow scene (#6) should double as a MultiMesh stress test on a real
     mid-range phone before committing to Phase 3+.
-  previous_notes: >
-    (none — first session)
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
