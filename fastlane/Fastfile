@@ -1,0 +1,86 @@
+default_platform(:ios)
+
+API_KEY_ID   = "67B57UX826"
+API_ISSUER   = "3b695d23-e338-4a21-925b-ebb0ff01f9da"
+API_KEY_PATH = File.expand_path("~/.appstoreconnect/private_keys/AuthKey_67B57UX826.p8")
+APP_ID       = "com.scottdix.neonsplice"
+
+platform :ios do
+  before_all do
+    app_store_connect_api_key(
+      key_id: API_KEY_ID,
+      issuer_id: API_ISSUER,
+      key_filepath: API_KEY_PATH,
+      in_house: false
+    )
+  end
+
+  # Create the distribution certificate + the App Store Connect app record.
+  # Run first; gives us the signing cert (and its Team ID via OU) before Godot export.
+  desc "Provision signing + create ASC app record"
+  lane :prep do
+    cert(
+      generate_apple_certs: true,
+      output_path: "./build/certs"
+    )
+    produce(
+      app_identifier: APP_ID,
+      app_name: "Neon Splice",
+      language: "English",
+      sku: "neonsplice-0001"
+    )
+  end
+
+  # Create the App Store Connect app record (cert is already provisioned manually).
+  # API-key auth can register the bundle ID (Developer portal) but NOT create the
+  # App Store Connect app record (Apple has no API for new-app creation). The record
+  # is created once via the ASC web UI.
+  desc "Register the bundle ID via Connect API (produce needs an Apple ID; this doesn't)"
+  lane :register_id do
+    require "spaceship"
+    token = Spaceship::ConnectAPI::Token.create(
+      key_id: API_KEY_ID, issuer_id: API_ISSUER, filepath: API_KEY_PATH)
+    Spaceship::ConnectAPI.token = token
+    existing = Spaceship::ConnectAPI::BundleId.all.find { |b| b.identifier == APP_ID }
+    if existing
+      UI.success("Bundle ID already registered: #{APP_ID}")
+    else
+      Spaceship::ConnectAPI::BundleId.create(name: "Neon Splice", identifier: APP_ID, platform: "IOS")
+      UI.success("Registered bundle ID: #{APP_ID}")
+    end
+  end
+
+  desc "Create + install the App Store provisioning profile"
+  lane :make_profile do
+    get_provisioning_profile(
+      app_identifier: APP_ID,
+      platform: "ios",
+      output_path: "./build/profile"
+    )
+    UI.success("SIGH_NAME=#{lane_context[SharedValues::SIGH_NAME]}")
+    UI.success("SIGH_UUID=#{lane_context[SharedValues::SIGH_UUID]}")
+    UI.success("SIGH_PROFILE_PATH=#{lane_context[SharedValues::SIGH_PROFILE_PATH]}")
+  end
+
+  # Build the Godot-generated Xcode project and push to TestFlight.
+  # Scheme is filled in once we know the generated project's scheme name.
+  desc "Archive + upload to TestFlight"
+  lane :ship do |opts|
+    sigh(
+      app_identifier: APP_ID,
+      platform: "ios"
+    )
+    build_app(
+      project: "build/ios/neon_splice.xcodeproj",
+      scheme: opts[:scheme] || "Neon Splice",
+      export_method: "app-store",
+      output_directory: "build/ipa",
+      clean: true
+    )
+    pilot(
+      app_identifier: APP_ID,
+      skip_submission: true,
+      skip_waiting_for_build_processing: true
+    )
+  end
+end

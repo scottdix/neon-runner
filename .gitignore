@@ -15,8 +15,8 @@
 data_*/
 mono_crash.*.json
 
-# Export templates
-export_presets.cfg
+# NOTE: export_presets.cfg is intentionally TRACKED (solo/private repo) so the iOS/Android
+# build config persists across machines. Scrub Team ID / signing fields before going public.
 
 # Builds
 build/

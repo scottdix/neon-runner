@@ -10,10 +10,12 @@ config_version=5
 
 [application]
 
-config/name="neon_runner"
-config/description="Neon Runner — a fast, glowing geometric runner for iOS & Android."
+config/name="Neon Splice"
+config/description="Neon Splice — a fast, glowing geometric runner for iOS & Android."
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
+; POC glow + MultiMesh stress test (#6). Replace when the real Run scene lands.
+run/main_scene="res://assets/poc/glow_stress.tscn"
 
 [autoload]
 

@@ -4,32 +4,62 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Neon Runner** — a mobile game (iOS + Android) in the "multiplier-gate runner" genre with a
-neon arcade-vector aesthetic. Built in **Godot 4.7 (.NET/mono build), GDScript-first**. As of
-session 2 the repo is still mostly plan + project-management scaffolding; actual game code is just
-beginning (Phase 1–2 foundation). `IMPLEMENTATION_PLAN.md` is the authoritative design doc (7
-phases, folder structure, autoload contracts, reference code stubs) — read it before building any
-gameplay system.
+**Neon Splice** — a premium (paymium, no-ads) mobile game (iOS + Android) that takes the
+"multiplier-gate runner" mechanic and builds a **free-steer, continuous-fire, vector bullet-hell
+survival shooter** (Geometry-Wars-style neon) on top of it. Built in **Godot 4.7 (.NET/mono
+build), GDScript-first**. As of session 5 the repo is still mostly plan + PM scaffolding; game
+code is just beginning (Phase 1–2 foundation).
+
+**Read `docs/design/GAME_SCOPE.md` first** — it is the authoritative source for *what the game
+is* (full system catalog, the 4 locked core decisions, MVP cut line, delivery roadmap). It
+reconciles the original plan against the full game concept (session 5). `IMPLEMENTATION_PLAN.md`
+is now a **technical reference / code-stub appendix** whose lane-runner gameplay model is partly
+superseded (analog steer not lanes, stream-economy gates, enemy faction, etc. — see GAME_SCOPE §8);
+when they conflict, **GAME_SCOPE wins**. `docs/design/DESIGN_SPEC.md` owns *how it looks*.
 
 ## Hard-won environment gotchas (read first — these cost a full session once)
 
 This is the **mac-mini** (`Macmini.localdomain`, Intel x86_64, macOS 15.7), the designated headless
-dev box. Godot is at `~/.local/bin/godot` (symlink to `~/Applications/Godot_mono.app`).
+dev box. Godot is at `~/.local/bin/godot`.
 
-- **Headless Godot does NOT exit cleanly on this machine.** `--editor`, `--import`,
-  `--check-only --script`, and even a script that calls `quit()` all do their work but then **hang
-  at shutdown**. Do not wait on them to terminate.
-- **macOS here has no `timeout`/`gtimeout`.** Wrapping a command in `timeout` silently fails to
-  run it; combined with `... | grep ... || echo "OK"` this produces **false passes**. Never trust a
-  validation built that way.
-- **Piping Godot through `grep` hides output**, because grep only flushes when the (hung) process
-  exits. To see Godot's output, redirect to a **log file** and read the file while it runs.
-- **Reliable validation pattern:** run Godot in the background writing to a log
-  (`godot --headless --script res://path.gd > /tmp/out.log 2>&1`), poll the log for an expected
-  marker your script `print()`s *before* `quit()`, then `pkill -9 -f "godot --headless"`.
-- **Preferred validation is the GUI:** opening the project in the Godot editor instantly surfaces
-  parse errors and confirms autoload registration (Project → Project Settings → Autoload). When a
-  human is available, that beats fighting the headless CLI.
+- **USE THE STANDARD (non-mono) BUILD for the GDScript dev/validation loop** — symlink points to
+  `~/Applications/Godot.app` (`4.7.stable.official`). **The `_mono` build (`Godot_mono.app`) HANGS at
+  headless startup on this box** — it sleeps at 0% CPU during .NET-runtime init and never runs your
+  `-s` script at all (no output, no `_initialize()`). This cost sessions 3–4 ("Events autoload
+  unverified"). The standard build runs `--headless -s` cleanly, flushes stdout, and exits. Keep the
+  mono app on disk only for the day C# is ever introduced; switch the symlink back then.
+- **macOS here has no `timeout`/`gtimeout`.** Wrapping a command in `timeout` silently fails to run
+  it; combined with `... | grep ... || echo "OK"` this produces **false passes**. Never trust a
+  validation built that way. Bound a wait with a counted `until ...; do sleep 0.5; n=$((n+1)); done`
+  loop instead (run it backgrounded — the harness blocks foreground `sleep`).
+- **Don't rely on stdout markers; write a result FILE.** Godot block-buffers stdout to a pipe/file,
+  so `print()`ed markers can lag. The robust pattern (see `tools/verify_events.gd`): the script
+  writes its verdict to an absolute path via `FileAccess` (flushed on `close()`, *before* `quit()`),
+  and you **poll for that file**. Helper: **`tools/run-headless.sh <res://script> [result-file]`**
+  runs Godot backgrounded, polls the result file, prints it, and `pkill`s. Autoloads DO load under
+  `-s` (verified: `Events` present at `/root`).
+- **GUI / VNC + windowed screenshots:** the dev can **VNC into the mini**, and the agent can render a
+  scene to a PNG autonomously — `tools/screenshot.gd` run WITHOUT `--headless` (Vulkan/Forward-Mobile
+  via MoltenVK comes up on the Intel UHD 630) saves `/tmp/poc_shot.png`. Good for confirming **layout,
+  composition, additive blending**. (Filter the run log carefully — the normal `Vulkan …` banner is
+  NOT an error; don't let a poll grep kill the process on it.)
+- **THIS BOX CANNOT VALIDATE GLOW/BLOOM OR REAL FPS.** The mini's Intel UHD 630 under MoltenVK
+  **fails to compile Godot's glow compute pipelines** (`[mvk-error] … AIR builtin function … no
+  definition found` → `Couldn't create Vulkan compute pipelines`), so the WorldEnvironment bloom — the
+  core neon effect — does **not** render here, and FPS readings are corrupted by per-frame error spam.
+  Additive blending still works (overlapping orbs read white-hot), but **the actual glow + performance
+  can only be confirmed on the iPhone/Simulator (#47)** — that is the real visual/perf surface, not a
+  nicety. Don't trust this box for either.
+- **iOS builds need Xcode 26+ (Godot 4.7 requires the iOS 26 SDK).** The 4.7 iOS template's
+  `libgodot.a` references iOS-26 Metal/QuartzCore symbols (`MTLTensorDomain`, `CADynamicRange*`) that
+  are **absent from older SDKs**, so **Xcode 16.4 (iOS 18.5 SDK) cannot link it** ("Undefined symbols
+  for architecture arm64"). This Intel mini (`Macmini8,1`, 2018) is marginal: macOS 26 Tahoe supports
+  it but Xcode 26 on Intel is uncertain and disk is tight (~67 GB free). The clean iOS box is an
+  **Apple-Silicon Mac** (handles Xcode 26 *and* renders the glow). NOTE: the entire TestFlight pipeline
+  is built and working — `fastlane/` (API-key auth, bundle-id registration, distribution cert in a
+  dedicated keychain `build/neonrunner.keychain-db`, App Store profile), and Godot's iOS export all
+  succeed; **only the Xcode/SDK version blocks the final `xcodebuild archive`.** See the SESSION-005
+  handoff for the exact resume steps.
 
 ## Solo project-management workflow (the operating system for this repo)
 

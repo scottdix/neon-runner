@@ -1,8 +1,8 @@
-# Neon Runner — Visual Design Spec (v0 directions)
+# Neon Splice — Visual Design Spec (v0 directions)
 
 > Source of truth: Claude Design project **"Ad-Free Gaterunner Game Design"**
 > (`projectId 82b7ff81-700d-4d53-a356-a1d0acfa5bda`, owner Scott), file
-> `Neon Runner Directions.dc.html` + `screenshots/`. That HTML renders only in the
+> `Neon Splice Directions.dc.html` + `screenshots/`. That HTML renders only in the
 > claude.ai/design runtime (it uses the `x-dc` component framework + `support.js`);
 > this doc is the durable, engine-facing extraction. Re-pull the source via the
 > DesignSync tool if it changes.
@@ -59,7 +59,7 @@ color from the mockup — scale up to taste for the in-engine glow pass.
 - Pulsing/rippling concentric cyan rings centered.
 - Vector **ship mark** (arrow/chevron polygon, cyan stroke + white core, cyan
   exhaust fins) above the wordmark.
-- **NEON / RUNNER** wordmark (Orbitron 900, cyan glow).
+- **NEON / SPLICE** wordmark (Orbitron 900, cyan glow).
 - Cyan **loading bar** (gradient `#22e7ff→#9bf3ff`) + blinking "LOADING ASSETS"
   (Press Start 2P).
 - `v0.1.0` top-right; **"NO ADS · EVER / ONE-TIME UNLOCK · PLAY FOREVER"** badge bottom.

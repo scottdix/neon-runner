@@ -19,7 +19,7 @@ Agent(
   description="Architecture/Planning",
   subagent_type="Plan",
   model="opus",
-  prompt="You are the planning specialist for Neon Runner, a Godot 4.x neon
+  prompt="You are the planning specialist for Neon Splice, a Godot 4.x neon
 arcade vector-shooter (GDScript-first). Read IMPLEMENTATION_PLAN.md and the
 relevant GitHub issues (via gh) for context. Produce a detailed, phased
 implementation plan for the request below: the files/scenes/scripts to

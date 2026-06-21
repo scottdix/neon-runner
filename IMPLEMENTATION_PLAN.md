@@ -1,4 +1,4 @@
-# Neon Runner: Implementation Plan
+# Neon Splice: Implementation Plan
 
 > A high-octane reimagining of the 'multiplier gate' genre, built with the soul of a classic arcade vector-shooter.
 
