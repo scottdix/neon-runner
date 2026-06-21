@@ -4,33 +4,33 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-20"
-  session: 2
+  session: 3
   notes: >
-    Session 2: Migrated primary development to the mac-mini (ssh mac-mini, user
-    scottdix) — it becomes the headless dev box, and Claude Code runs NATIVELY
-    there inside a user-started tmux session (the M2 laptop is out of the loop).
-    Provisioned it userspace/no-Homebrew: repo cloned at ~/Documents/neon-runner,
-    Godot 4.7-mono at ~/Applications/Godot_mono.app (symlinked ~/.local/bin/godot,
-    runs headless), .NET SDK 8.0.422 at ~/.dotnet, PATH+DOTNET_ROOT in ~/.zshrc.
-    Already had Xcode 16.4 (iOS Sim), Android emulator/adb, node, gh, java.
-    Credentials verified: gh authed as scottdix (ADMIN; repo/workflow/gist/read:org),
-    wired as git credential helper, HTTPS push works. Stack confirmed: stay
-    Godot/.NET (EAS/emulator tooling was incidental). No project code yet — #2 not
-    started. ON THE MAC-MINI: git pull first, then /session-start. The mac-mini's
-    Claude has its own ~/.claude and won't see the laptop's memory — the repo
-    (PROJECT_STATE + docs/handoff) is the only cross-box context.
+    Session 3: First real code. (1) #2 DONE/closed — Godot project initialized:
+    project.godot + full folder tree + icon.svg, calibrated for MOBILE iOS+Android
+    PORTRAIT (base 1080x1920, Mobile renderer, hdr_2d for glow, ETC2/ASTC, 2x MSAA
+    2D, touch emulation). Orientation = portrait, user-confirmed (overrides the
+    plan's landscape grid-shader hint — flip that shader's vec2(1920,1080) when
+    built). (2) #3 STARTED (not closed) — autoload/events.gd written (14 signals)
+    and registered as Events autoload; runtime verification BLOCKED. (3) Added
+    CLAUDE.md (architecture + PM workflow + gotchas). (4) Re-synced repo (was 1
+    commit behind; FF to 8af23a7); HTTPS push works, no key changes needed.
+    BLOCKER for next session: headless Godot HANGS at shutdown on this mac-mini
+    (--editor/--import/--script all do their work but never exit) and macOS here
+    has no timeout/gtimeout (=> false passes). Do NOT validate via headless CLI —
+    open the editor GUI or background-run-to-logfile+poll+pkill. project.godot
+    mobile edits and the Events registration were NOT re-validated at runtime;
+    first action next session = open in GUI and confirm clean load + Events autoload.
   previous_notes: >
-    Session 1: Project-management bootstrap + an engine/performance design
-    decision. (1) Stood up a stripped-down solo PM layer modeled on the
-    waypoint-housing-portal system: PROJECT_STATE.yaml + docs/handoff/ +
-    three skills (/session-start, /handoff, /plan). GitHub Issues is the tracker
-    (46 issues, 7 phase epics, 6 milestones). (2) DECISION: do NOT build a custom
-    engine a la Geometry Wars. The mobile concern (large/growing entity counts) is
-    a batching problem, not an engine problem — solve in Godot via
-    MultiMeshInstance2D, GPUParticles2D, full-screen bloom (cost ~constant), and
-    treating the projectile swarm as cosmetic followers of ONE logical blob. The
-    POC glow scene (#6) should double as a MultiMesh stress test on a real
-    mid-range phone before committing to Phase 3+.
+    Session 2: Migrated primary development to the mac-mini (user scottdix) — the
+    headless dev box; Claude Code runs natively there. Provisioned userspace/
+    no-Homebrew: repo at ~/Documents/neon-runner, Godot 4.7-mono symlinked at
+    ~/.local/bin/godot, .NET SDK 8.0.422, PATH+DOTNET_ROOT in ~/.zshrc. Xcode 16.4
+    (iOS Sim), Android emulator/adb, node, gh, java already present. gh authed as
+    scottdix (ADMIN), HTTPS push works. Stack stays Godot/.NET. No project code yet
+    — #2 not started. The mac-mini's Claude has its own ~/.claude and won't see the
+    laptop's memory — the repo (PROJECT_STATE + docs/handoff) is the only cross-box
+    context.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
@@ -38,10 +38,11 @@ last_updated:
 focus:
   active_milestone: "v0.1.0 - Proof of Concept"
   active_epic: "#1 — Phase 1-2: Foundation & Project Architecture"
-  current_issue: "#2 — Initialize Godot 4.x project with folder structure"
-  next_issue: "#3 — Implement Events autoload (global event bus)"
+  current_issue: "#3 — Implement Events autoload (global event bus)"
+  next_issue: "#4 — Implement GameState autoload (score, multiplier, settings)"
   notes: >
-    Phase 1-2 foundation work. Order within the epic: #2 (init project) →
+    #3 is partially done (events.gd written + registered) but UNVERIFIED — first
+    verify it loads in the Godot editor GUI, then close it. Epic order:
     #3 (Events) → #4 (GameState) → #5 (ObjectPool) → #6 (POC glow scene,
     expanded into a MultiMesh stress test per the Session 1 engine decision).
 

@@ -1,0 +1,52 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="neon_runner"
+config/description="Neon Runner — a fast, glowing geometric runner for iOS & Android."
+config/features=PackedStringArray("4.7", "Mobile")
+config/icon="res://icon.svg"
+
+[autoload]
+
+; Global signal bus — registered first so all other singletons/scenes can rely
+; on it existing. Order per IMPLEMENTATION_PLAN.md:
+;   Events -> GameState -> ObjectPool -> AudioManager -> SceneManager
+Events="*res://autoload/events.gd"
+
+[display]
+
+; Portrait, base design resolution 1080x1920 (9:16). Stretch scales the 2D
+; canvas to fit any device aspect; "expand" reveals extra space on taller/wider
+; phones rather than letterboxing — design UI against anchors + the safe area.
+window/size/viewport_width=1080
+window/size/viewport_height=1920
+window/handheld/orientation=1
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[input_devices]
+
+; Let mouse drive touch events so the game is testable on desktop.
+pointing/emulate_touch_from_mouse=true
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="mobile"
+; HDR 2D buffer so Color RGB values > 1.0 feed the WorldEnvironment glow/bloom.
+viewport/hdr_2d=true
+; ASTC covers both iOS (Metal) and modern Android (Vulkan) mobile GPUs, so all
+; future texture imports land in a mobile-friendly compressed format.
+textures/vram_compression/import_etc2_astc=true
+; 2x MSAA cleans up the neon Line2D edges cheaply on tile-based mobile GPUs.
+; Tunable in Phase 7 (Optimization) if it costs frames on mid-range devices.
+anti_aliasing/quality/msaa_2d=1
