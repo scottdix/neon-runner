@@ -50,16 +50,27 @@ dev box. Godot is at `~/.local/bin/godot`.
   Additive blending still works (overlapping orbs read white-hot), but **the actual glow + performance
   can only be confirmed on the iPhone/Simulator (#47)** — that is the real visual/perf surface, not a
   nicety. Don't trust this box for either.
-- **iOS builds need Xcode 26+ (Godot 4.7 requires the iOS 26 SDK).** The 4.7 iOS template's
-  `libgodot.a` references iOS-26 Metal/QuartzCore symbols (`MTLTensorDomain`, `CADynamicRange*`) that
-  are **absent from older SDKs**, so **Xcode 16.4 (iOS 18.5 SDK) cannot link it** ("Undefined symbols
-  for architecture arm64"). This Intel mini (`Macmini8,1`, 2018) is marginal: macOS 26 Tahoe supports
-  it but Xcode 26 on Intel is uncertain and disk is tight (~67 GB free). The clean iOS box is an
-  **Apple-Silicon Mac** (handles Xcode 26 *and* renders the glow). NOTE: the entire TestFlight pipeline
-  is built and working — `fastlane/` (API-key auth, bundle-id registration, distribution cert in a
-  dedicated keychain `build/neonrunner.keychain-db`, App Store profile), and Godot's iOS export all
-  succeed; **only the Xcode/SDK version blocks the final `xcodebuild archive`.** See the SESSION-005
-  handoff for the exact resume steps.
+- **iOS toolchain — RESOLVED on this mini (session 6).** Godot 4.7's iOS `libgodot.a` references iOS-26
+  Metal/QuartzCore symbols (`MTLTensorDomain`, `CADynamicRange*`) absent from older SDKs, so **Xcode 16.4
+  (iOS 18.5 SDK) couldn't link it** ("Undefined symbols for architecture arm64"). The fix did **NOT** need
+  an OS upgrade, and the old plan to upgrade the mini to **macOS Tahoe 26 is impossible — Tahoe DROPS the
+  2018 mini** (`Macmini8,1`; Tahoe's only Intel models are the 2019 Mac Pro, 2020 iMac, 2019 16" MBP,
+  2020 4-port 13" MBP). Instead: Xcode 26's floor is macOS Sequoia **15.6** and this mini runs 15.7.7, and
+  Apple ships a **Universal Xcode 26 `.xip`** with an x86_64 slice. Installed **Xcode 26.6** to
+  `/Applications/Xcode-26.6.app` (download the Universal `.xip` manually from developer.apple.com/download —
+  do **NOT** use the `xcodes` CLI on Intel, it grabs the arm64-only build → "Bad CPU type"). Base `.xip`
+  ships without platform SDKs (Xcode 16+ change) → ran `xcodebuild -downloadPlatform iOS` to get the iOS
+  26.5 device SDK. **Unsigned archive of `build/ios/neon_runner.xcodeproj` now SUCCEEDS — the mini builds
+  iOS archives.** Active toolchain: `xcode-select -p` → Xcode-26.6.
+  - **`Xcode-16.4.0.app` is kept ONLY as a rollback target** (`sudo xcode-select -s
+    /Applications/Xcode-16.4.0.app/Contents/Developer`). **TODO: remove Xcode-16.4.0.app once a real
+    TestFlight upload has succeeded end-to-end** (it cannot build this project, so its only value is
+    insurance against an RC-build quirk during signing).
+  - **Still blocked before TestFlight — SIGNING, not toolchain:** the profile + `build/exportOptions.plist`
+    still reference the orphaned old bundle `com.scottdix.neonrunner` (live app is `…neonsplice`), the
+    distribution cert isn't loaded in `build/neonrunner.keychain-db`, and the **App Store Connect app
+    record must be created in the web UI** (Apple has no API for new-app creation — `fastlane`/agent can't).
+  - Glow/FPS still un-renderable here (Intel UHD 630) — needs a real device or an Apple-Silicon Mac.
 
 ## Solo project-management workflow (the operating system for this repo)
 

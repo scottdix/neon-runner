@@ -3,9 +3,22 @@ schema_version: 1
 # Read at /session-start, advanced at /handoff. History depth is 2
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
-  date: "2026-06-20"
-  session: 5
+  date: "2026-06-21"
+  session: 6
   notes: >
+    Session 6. (1) iOS TOOLCHAIN UNBLOCKED + #47 SHIPPED. The session-5 plan (mini -> macOS
+    Tahoe) was impossible (Tahoe drops the 2018 mini) AND unnecessary: Xcode 26's floor is
+    Sequoia 15.6 (mini runs 15.7.7) and Apple ships a Universal Xcode 26 .xip with an x86_64
+    slice. Installed Xcode 26.6 RC2 side-by-side with 16.4 (NO OS upgrade), -downloadPlatform
+    iOS for the iOS 26.5 SDK. The MTLTensorDomain/CADynamicRange link error is gone. (2) Signing
+    reconciled (rename debt): make_profile for com.scottdix.neonsplice, fixed exportOptions,
+    re-exported the stale Godot project -> neon_splice.xcodeproj, baked manual-signing xcargs
+    into the Fastfile ship lane (beats Godot's Automatic-vs-Distribution conflict). (3) `fastlane
+    ios ship` ran end-to-end -> FIRST BUILD ON TESTFLIGHT (ASC app id 6782516475). (4) Confirmed
+    ../virtus-focus unaffected (Expo/EAS cloud, no local Xcode). (5) Docs corrected (CLAUDE.md,
+    SESSION-005), 16.4 flagged for removal after on-device test. Glow/FPS still need a real device
+    (now reachable via TestFlight).
+  previous_notes: >
     Session 5 (big one). (1) RENAMED game "Neon Runner"->"Neon Splice" (App Store
     name conflict); bundle id com.scottdix.neonsplice registered with Apple (repo slug
     stays neon-runner). (2) Reconciled the FULL scope -> docs/design/GAME_SCOPE.md, now
@@ -25,12 +38,6 @@ last_updated:
     iOS 26 SDK (engine refs MTLTensorDomain/CADynamicRange absent from Xcode 16.4).
     Toolchain upgrade (mini->Tahoe+Xcode26, uncertain on Intel; or build on the M2 Air)
     deferred to next session by the user.
-  previous_notes: >
-    Session 4: Design-led planning (no gameplay code). Imported the first art-direction
-    pass into docs/design/DESIGN_SPEC.md (palette, 4 fonts, 4 screens). TWO CORE
-    DECISIONS LOCKED: FINITE distance-based levels w/ FINISH line (not endless), and
-    FIRING is a CORE mechanic. Monetization = paymium (no ads, one-time IAP). New issues
-    #47-#52; re-scoped #44/#41/#42/#9/#29/#10/#12/#13. POC fast-path agreed (#6 + #47).
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
@@ -38,19 +45,17 @@ last_updated:
 focus:
   active_milestone: "v0.1.0 - Proof of Concept"
   active_epic: "#1 — Phase 1-2: Foundation & Project Architecture"
-  current_issue: "#47 — iOS build + on-device deploy (BLOCKED: Godot 4.7 needs Xcode 26 / iOS 26 SDK)"
-  next_issue: "MVP gameplay slice (#9/#10/#52 steer+fire, #11/#56 gates, #55 Glow Battery, #51 finish) — NOT device-gated"
+  current_issue: "MVP gameplay slice — #9/#10/#52 analog steer + always-on fire (entry point; NOT device-gated)"
+  next_issue: "#11/#56 ± gate on stream volume + #55 Glow Battery + #51 finite level/finish line"
   notes: >
-    #3 DONE/closed (Events verified). #6 POC built + headless-validated (D3 proven); its
-    device visual/perf check is gated by #47. #47 is BLOCKED purely on the Xcode/SDK
-    version: the whole TestFlight pipeline (fastlane/, signing, profile, Godot export)
-    works — only `xcodebuild archive` fails for lack of the iOS 26 SDK. RESOLVE by
-    getting Xcode 26 onto a usable Mac: (a) mini -> macOS 26 Tahoe + Xcode 26 (Intel
-    uncertain, ~67GB free), or (b) the MacBook Air M2 (Apple Silicon, clean; 8GB tight).
-    Then: fastlane ios make_profile -> verify regenerated scheme -> fastlane ios ship ->
-    create ASC app record in web UI (name "Neon Splice", bundle com.scottdix.neonsplice).
-    ALTERNATIVELY start the MVP gameplay slice (builds/validates on standard Godot now;
-    visuals on the M2 Air/VNC). Signing artifacts + .p8 path: see SESSION-005 handoff.
+    #47 DONE/closed — iOS pipeline complete, first build ON TESTFLIGHT (ASC app id 6782516475)
+    via `fastlane ios ship` on the Intel mini (Xcode 26.6 installed side-by-side; NO OS upgrade).
+    #3 DONE (Events). #6 POC headless-validated (D3 proven); its device glow/FPS check is now
+    reachable via the TestFlight build on a real iPhone — that's the one remaining POC validation.
+    Now START the MVP gameplay slice (standard Godot, headless-validatable here): #9/#10/#52 analog
+    steer + always-on fire first, then #11/#56 gates + #55 Glow Battery + #51 finish. Architecture:
+    Events bus + GameState autoloads (see CLAUDE.md). TODO (housekeeping): remove Xcode-16.4.0.app
+    after the TestFlight build is verified on a device. iOS signing crib: see SESSION-006 + CLAUDE.md.
 
 # =============================================================================
 # TRACKER

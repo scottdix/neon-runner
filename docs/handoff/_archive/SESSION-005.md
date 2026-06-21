@@ -38,6 +38,14 @@ Then resume: `fastlane ios make_profile` → confirm the regenerated Xcode **sch
 → create the App Store Connect **app record** in the web UI (name "Neon Splice", bundle `com.scottdix.neonsplice`)
 → TestFlight. *(User deferred the toolchain upgrade to next session.)*
 
+> **⚠️ CORRECTION (session 6, 2026-06-21):** Both toolchain options above were wrong. Option (a) is
+> **impossible** — macOS Tahoe 26 **drops** the 2018 mini (`Macmini8,1`); it can never run Tahoe. And no
+> OS upgrade was needed anyway: Xcode 26's floor is macOS Sequoia **15.6** (the mini runs 15.7.7), and
+> Apple's **Universal** Xcode 26 `.xip` has an x86_64 slice. Session 6 installed **Xcode 26.6** on the
+> mini's existing Sequoia and an unsigned `xcodebuild archive` now **SUCCEEDS** — the toolchain blocker
+> is dead. What remains is **signing** (orphaned `…neonrunner` bundle in the profile/exportOptions; cert
+> not loaded; ASC app record still needs web-UI creation), not the toolchain. See CLAUDE.md gotchas.
+
 **Alternatively (NOT device-gated):** start the **MVP gameplay slice** — analog steer + always-on fire
 (#9/#10/#52), one ± gate acting on stream volume (#11/#56), Glow Battery (#55), finite level + finish (#51).
 Logic validates on the standard Godot build headlessly; visuals confirm on the M2 Air / VNC.

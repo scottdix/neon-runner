@@ -70,12 +70,18 @@ platform :ios do
       app_identifier: APP_ID,
       platform: "ios"
     )
+    # Godot regenerates the project with CODE_SIGN_STYLE=Automatic but CODE_SIGN_IDENTITY=
+    # "Apple Distribution" (app-store method) — a conflict that fails any archive. Force MANUAL
+    # signing here so it works on every re-export, independent of Godot's default.
     build_app(
       project: "build/ios/neon_splice.xcodeproj",
-      scheme: opts[:scheme] || "Neon Splice",
-      export_method: "app-store",
+      scheme: opts[:scheme] || "neon_splice",
       output_directory: "build/ipa",
-      clean: true
+      export_options: "build/exportOptions.plist",
+      clean: true,
+      xcargs: 'CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" ' \
+              'PROVISIONING_PROFILE_SPECIFIER="com.scottdix.neonsplice AppStore" ' \
+              'DEVELOPMENT_TEAM=T4B6VZ9RJR'
     )
     pilot(
       app_identifier: APP_ID,
