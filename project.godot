@@ -14,8 +14,9 @@ config/name="Neon Splice"
 config/description="Neon Splice — a fast, glowing geometric runner for iOS & Android."
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
-; POC glow + MultiMesh stress test (#6). Replace when the real Run scene lands.
-run/main_scene="res://assets/poc/glow_stress.tscn"
+; MVP core-loop slice: analog steer + always-on fire (#9/#10/#52). The POC glow
+; stress scene (#6) stays in-tree at res://assets/poc/glow_stress.tscn for perf re-tests.
+run/main_scene="res://assets/levels/run.tscn"
 
 [autoload]
 
@@ -23,6 +24,8 @@ run/main_scene="res://assets/poc/glow_stress.tscn"
 ; on it existing. Order per IMPLEMENTATION_PLAN.md:
 ;   Events -> GameState -> ObjectPool -> AudioManager -> SceneManager
 Events="*res://autoload/events.gd"
+; Run state + economy (projectile_count/score/finish). Depends on Events -> second.
+GameState="*res://autoload/game_state.gd"
 
 [display]
 

@@ -3,9 +3,24 @@ schema_version: 1
 # Read at /session-start, advanced at /handoff. History depth is 2
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
-  date: "2026-06-21"
-  session: 6
+  date: "2026-06-22"
+  session: 7
   notes: >
+    Session 7. (1) TESTFLIGHT INSTALLABLE: build #1 was packaged iPad-only (Godot
+    targeted_device_family=1 == iPad in its enum) -> "incompatible" on the iPhone 12 Pro.
+    Fixed to 2 (iPhone & iPad, UIDeviceFamily [1,2]); created internal TestFlight group +
+    tester (scottdix@gmail.com, no dot) via ASC API. (2) #6 POC DEVICE-VALIDATED: glow blooms,
+    FPS 59-60 on the iPhone 12 Pro -- the last check the Intel mini couldn't do. (3) BUILT THE
+    MVP GAMEPLAY SLICE (#9/#10/#52, partial #14), device-validated: new GameState autoload (#2),
+    Events-bus extensions, new Run main scene (replaces the POC) = analog slide-steer + always-on
+    MultiMesh fire stream + shootable exploding targets + HUD; all headless-validated
+    (tools/verify_run.gd) + clean boot. (4) Iterated game-feel over builds 2->7 to a CONNECTED
+    hit loop: glow render-path fix (ship/enemies via MultiMesh/additive HDR, NOT draw_* which
+    never blooms), then PER-IMPACT DAMAGE (bullets consumed on contact deal the damage) + death
+    bursts -> shoot->impact->destroy confirmed on device. (5) Gotchas: ship-over-SSH needs
+    keychain unlock + set-key-partition-list (build #2 failed errSecInternalComponent without
+    it); main scene can't use bare class_name (no import cache) -> preload().
+  previous_notes: >
     Session 6. (1) iOS TOOLCHAIN UNBLOCKED + #47 SHIPPED. The session-5 plan (mini -> macOS
     Tahoe) was impossible (Tahoe drops the 2018 mini) AND unnecessary: Xcode 26's floor is
     Sequoia 15.6 (mini runs 15.7.7) and Apple ships a Universal Xcode 26 .xip with an x86_64
@@ -18,26 +33,6 @@ last_updated:
     ../virtus-focus unaffected (Expo/EAS cloud, no local Xcode). (5) Docs corrected (CLAUDE.md,
     SESSION-005), 16.4 flagged for removal after on-device test. Glow/FPS still need a real device
     (now reachable via TestFlight).
-  previous_notes: >
-    Session 5 (big one). (1) RENAMED game "Neon Runner"->"Neon Splice" (App Store
-    name conflict); bundle id com.scottdix.neonsplice registered with Apple (repo slug
-    stays neon-runner). (2) Reconciled the FULL scope -> docs/design/GAME_SCOPE.md, now
-    authoritative (CLAUDE.md points to it): the game is a free-steer, continuous-fire,
-    vector bullet-hell survival shooter, NOT the old endless lane-runner; 4 locked
-    decisions (analog steer, one win/loss, two collision models D3, authored phases).
-    (3) Tracker 52->64 issues: enemy epic #53 + #54-#63 + #64 (Bazzite/WoL); retitled
-    #9/#10/#44; reconciliation comments on stale issues. (4) FIXED the dev loop: the
-    installed _mono Godot hangs at headless startup -> installed STANDARD Godot 4.7 +
-    reusable harness (tools/run-headless.sh, verify_events.gd, screenshot.gd). (5) #3
-    Events autoload VERIFIED + CLOSED (was blocked 2 sessions; it was the mono binary).
-    (6) #6 POC built (assets/poc/glow_stress): MultiMesh fleet + batched collision;
-    headless PASS, logic flat ~30us across a 10x fleet (4k->40k) = D3 proven; glow/FPS
-    NOT renderable on this mini (Intel UHD 630). (7) Built the FULL iOS/TestFlight
-    pipeline (fastlane/, signing cert+keychain+profile, Godot iOS export -> valid Xcode
-    project; PLA accepted). BLOCKED at xcodebuild archive: Godot 4.7 needs Xcode 26 /
-    iOS 26 SDK (engine refs MTLTensorDomain/CADynamicRange absent from Xcode 16.4).
-    Toolchain upgrade (mini->Tahoe+Xcode26, uncertain on Intel; or build on the M2 Air)
-    deferred to next session by the user.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
@@ -45,17 +40,19 @@ last_updated:
 focus:
   active_milestone: "v0.1.0 - Proof of Concept"
   active_epic: "#1 — Phase 1-2: Foundation & Project Architecture"
-  current_issue: "MVP gameplay slice — #9/#10/#52 analog steer + always-on fire (entry point; NOT device-gated)"
-  next_issue: "#11/#56 ± gate on stream volume + #55 Glow Battery + #51 finite level/finish line"
+  current_issue: "#11/#56 ± gates on stream volume + #55 Glow Battery + #51 finite level / finish line (rest of v0.2.0 core loop)"
+  next_issue: "#53 enemy faction (real enemy types/behaviours) + #14 collision hardening as bullet counts scale"
   notes: >
-    #47 DONE/closed — iOS pipeline complete, first build ON TESTFLIGHT (ASC app id 6782516475)
-    via `fastlane ios ship` on the Intel mini (Xcode 26.6 installed side-by-side; NO OS upgrade).
-    #3 DONE (Events). #6 POC headless-validated (D3 proven); its device glow/FPS check is now
-    reachable via the TestFlight build on a real iPhone — that's the one remaining POC validation.
-    Now START the MVP gameplay slice (standard Godot, headless-validatable here): #9/#10/#52 analog
-    steer + always-on fire first, then #11/#56 gates + #55 Glow Battery + #51 finish. Architecture:
-    Events bus + GameState autoloads (see CLAUDE.md). TODO (housekeeping): remove Xcode-16.4.0.app
-    after the TestFlight build is verified on a device. iOS signing crib: see SESSION-006 + CLAUDE.md.
+    Session 7 DONE: #6 POC device-validated (glow + 60fps on iPhone 12 Pro); MVP slice shipped
+    (#9 analog steer, #10/#52 always-on fire, partial #14) and feels good on device — see SESSION-007.
+    Run scene (res://assets/levels/run.tscn) is the main scene; GameState autoload added (#2).
+    Gates (#11/#56) mutate GameState.projectile_count (ALREADY wired to fleet fire volume), so the
+    plumbing exists — gates just call GameState.add_projectiles(+/-N). #55 Glow Battery = a 0-100
+    bar that drains on hazard/negative-gate, loss at 0. #51 finish line = finite distance + "RUN
+    COMPLETE". REVIEW FLAG: damage model is now per-bullet-impact, NOT the locked D3 beam emitter
+    (kept D3's perf intent; live bullets bounded ~140). Sanity-check before enemy/tier work scales
+    counts. iOS ship over SSH: unlock keychain + set-key-partition-list first (see SESSION-007).
+    TODO still open: remove Xcode-16.4.0.app (device test now passed, so it's safe to drop).
 
 # =============================================================================
 # TRACKER

@@ -12,7 +12,21 @@ extends Node
 
 # --- Player events -----------------------------------------------------------
 signal player_died
-signal player_lane_changed(new_lane: int)
+## Analog slide-steer (D1, GAME_SCOPE): emitted as the ship's x moves. `x` is the
+## ship's canvas x; `x_normalized` is 0..1 across the steerable width. Supersedes
+## the old discrete `player_lane_changed` (lanes are now visual-only grid columns).
+signal player_steered(x: float, x_normalized: float)
+
+# --- Fleet / fire ------------------------------------------------------------
+## Always-on fire (D1, GAME_SCOPE): the swarm volume. Re-emitted by GameState
+## whenever projectile_count changes (gates spike/decimate it).
+signal projectile_count_changed(count: int)
+## Emitted each volley the fleet fires — hook for audio/muzzle vfx.
+signal fleet_fired(shots: int)
+
+# --- Targets / enemies -------------------------------------------------------
+## A shootable target was destroyed by the fleet — hook for score/particles/audio.
+signal enemy_destroyed(at: Vector2, points: int)
 
 # --- Gate events -------------------------------------------------------------
 signal gate_passed(gate_type: String, value: float, new_count: int)
