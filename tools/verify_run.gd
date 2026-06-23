@@ -318,6 +318,58 @@ func _initialize() -> void:
 		lines.append("gate-drain OK: −/÷ gate costs battery, +/× gate does not")
 	sp2.free()
 
+	# 12) Glow Battery HUD placement (#75): _build_hud builds the BatteryTrack + BatteryFill,
+	#     _on_battery_changed tracks the fill width to the battery fraction, and the battery
+	#     strip no longer overlaps the SCORE readout (the green bar was "very much in the way"
+	#     on build #11 — now pinned to the top edge, above the SCORE/COMBO row).
+	var RunS: GDScript = load("res://assets/levels/run.gd")
+	var run: Node2D = RunS.new()
+	root.add_child(run)                          # _build_hud add_child()s onto Run
+	run.call("_build_hud")
+	var hud: CanvasLayer = run.get_node_or_null("HUD")
+	var track_n: ColorRect = hud.get_node_or_null("BatteryTrack") if hud else null
+	var fill_n: ColorRect = hud.get_node_or_null("BatteryFill") if hud else null
+	lines.append("battery-hud: HUD=%s track=%s fill=%s" % [
+		hud != null, track_n != null, fill_n != null])
+	if hud == null or track_n == null or fill_n == null:
+		lines.append("battery-hud FAIL: track/fill ColorRects not built"); ok = false
+		lines.append("RESULT=FAIL"); run.free(); _write(lines); return
+
+	# Fill width tracks the battery fraction on glow_battery_changed (full -> half -> empty).
+	var bar_w: float = track_n.size.x
+	run.call("_on_battery_changed", 100.0, 100.0)
+	var w_full: float = fill_n.size.x
+	run.call("_on_battery_changed", 50.0, 100.0)
+	var w_half: float = fill_n.size.x
+	run.call("_on_battery_changed", 0.0, 100.0)
+	var w_zero: float = fill_n.size.x
+	lines.append("battery-fill: bar_w=%.0f full=%.0f half=%.0f empty=%.0f" % [
+		bar_w, w_full, w_half, w_zero])
+	if absf(w_full - bar_w) > 0.5 or absf(w_half - bar_w * 0.5) > 0.5 or absf(w_zero) > 0.5:
+		lines.append("battery-fill FAIL: fill width does not track the 0..1 fraction"); ok = false
+	else:
+		lines.append("battery-fill OK: fill tracks the battery fraction across the bar")
+
+	# Non-overlap with SCORE: the battery strip's vertical band must sit entirely ABOVE the
+	# SCORE caption (top-left at y=70 in _build_hud) so it never collides with the readout.
+	var bat_top: float = track_n.position.y
+	var bat_bottom: float = track_n.position.y + track_n.size.y
+	var score_cap: Label = null
+	for child in hud.get_children():
+		if child is Label and child.text == "SCORE":
+			score_cap = child
+			break
+	var score_top: float = score_cap.position.y if score_cap else 70.0
+	lines.append("battery-vs-score: bat_band=[%.0f,%.0f] score_top=%.0f" % [
+		bat_top, bat_bottom, score_top])
+	if score_cap == null:
+		lines.append("battery-vs-score FAIL: SCORE label not found in HUD"); ok = false
+	elif bat_bottom > score_top:
+		lines.append("battery-vs-score FAIL: battery strip overlaps the SCORE readout"); ok = false
+	else:
+		lines.append("battery-vs-score OK: battery strip clears the SCORE rect")
+	run.free()
+
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write(lines)
 

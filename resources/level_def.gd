@@ -42,6 +42,15 @@ extends Resource
 	{"m": 180.0, "l": ["div", 2.0],  "r": ["mul", 2.0]},   # mirror — trap on the left
 	{"m": 225.0, "l": ["add", 25.0], "r": ["mul", 3.0]},
 	{"m": 270.0, "l": ["sub", 10.0], "r": ["add", 30.0]},
+	# Back half (run length doubled to 640 m): the escalation continues so the extended
+	# run stays populated instead of coasting to an empty finish.
+	{"m": 315.0, "l": ["mul", 2.0],  "r": ["add", 10.0]},
+	{"m": 365.0, "l": ["add", 20.0], "r": ["sub", 8.0]},
+	{"m": 415.0, "l": ["mul", 3.0],  "r": ["div", 2.0], "hijack": "r"},
+	{"m": 465.0, "l": ["div", 2.0],  "r": ["mul", 2.0]},
+	{"m": 515.0, "l": ["add", 30.0], "r": ["mul", 3.0]},
+	{"m": 565.0, "l": ["sub", 12.0], "r": ["add", 40.0]},
+	{"m": 610.0, "l": ["mul", 3.0],  "r": ["add", 50.0]},
 ]
 
 ## Enemy waves: `{"m": metres, "kind": name, "count": n, "x"?: centre, "spread"?: px}`.
@@ -56,4 +65,12 @@ extends Resource
 	{"m": 200.0, "kind": "rhombus", "count": 1, "x": 540.0},
 	{"m": 240.0, "kind": "mixed",   "count": 6},
 	{"m": 290.0, "kind": "glitch",  "count": 7},
+	# Back half (run length doubled to 640 m): denser, harder waves to the finish.
+	{"m": 330.0, "kind": "fractal", "count": 3},
+	{"m": 380.0, "kind": "mixed",   "count": 6},
+	{"m": 430.0, "kind": "rhombus", "count": 2, "x": 540.0},
+	{"m": 480.0, "kind": "mixed",   "count": 7},
+	{"m": 530.0, "kind": "fractal", "count": 3},
+	{"m": 580.0, "kind": "mixed",   "count": 8},
+	{"m": 620.0, "kind": "glitch",  "count": 8},
 ]

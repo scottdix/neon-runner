@@ -34,6 +34,12 @@ const DIAMOND_TEX_SIZE := 48
 const BASE_QUAD := 96.0             # MultiMesh quad size; per-instance scaled by size
 
 const DAMAGE_PER_BULLET := 10.0
+## Armor "chip" floor (#74): a stream AT/BELOW an enemy's armor still does this fraction
+## of one bullet's damage per frame (only while it's actually being hit). It keeps the
+## "a dense swarm cracks armor faster" intent but removes the hard lockout that made a
+## thinned-out Rhombus literally unkillable — a sustained sub-armor stream now eventually
+## wins, while a single stray hit stays negligible (one frame = 0.15 bullet ≈ 1.5 hp).
+const ARMOR_CHIP_FRACTION := 0.15
 const CONSUME_PAD := 10.0           # collision radius = visible half-size + this
 const FLASH_DECAY := 0.08           # seconds an impact flash-pulse lasts
 const BURST_LIFE := 0.30            # seconds a death burst lives
@@ -282,13 +288,21 @@ func _hit_radius(e: Dictionary) -> float:
 
 
 ## Apply a frame's worth of bullet hits to an enemy, honoring its armor: a RHOMBUS
-## only takes the hits ABOVE its armor value, so a thin stream (few hits/frame) never
-## cracks it — you need a swarm dense enough to overwhelm the armor. Always flashes.
+## takes the hits ABOVE its armor value at full damage, so a swarm dense enough to
+## overwhelm the armor cracks it fast. A stream AT/BELOW the armor still does a small
+## CHIP (#74) — not a hard wall — so a sustained thin stream eventually wins instead of
+## being permanently locked out (the "unkillable magenta enemy" bug), while a single
+## stray hit stays negligible. Always flashes on any hit.
 func _apply_damage(e: Dictionary, hits: int) -> void:
+	if hits <= 0:
+		return
 	var armor: int = int(e.get("armor", 0))
 	var effective: int = maxi(0, hits - armor)
 	if effective > 0:
 		e["hp"] = float(e["hp"]) - float(effective) * DAMAGE_PER_BULLET
+	else:
+		# Sub-armor stream: chip slowly rather than zero damage (no lockout, #74).
+		e["hp"] = float(e["hp"]) - ARMOR_CHIP_FRACTION * DAMAGE_PER_BULLET
 	e["flash"] = 1.0
 
 

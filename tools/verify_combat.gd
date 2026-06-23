@@ -72,27 +72,51 @@ func _initialize() -> void:
 	else:
 		lines.append("archetype OK: glitch<rhombus, rhombus armored, fractal splits")
 
-	# 3) Rhombus armor — _apply_damage absorbs hits up to armor; only the excess hurts.
-	#    A glitch (armor 0) takes the full hit.
+	# 3) Rhombus armor — _apply_damage takes hits ABOVE armor at full damage; a single
+	#    sub-armor frame does only a NEGLIGIBLE chip (no one-shot, but no lockout either,
+	#    #74). A glitch (armor 0) takes the full hit.
 	var rh: Dictionary = tg.call("_new_enemy", TargetsS.KIND_RHOMBUS, 0.0)
 	var rh_hp0: float = rh["hp"]
-	tg.call("_apply_damage", rh, int(rh["armor"]))          # hits == armor -> no damage
+	tg.call("_apply_damage", rh, int(rh["armor"]))          # hits == armor -> chip only
 	var rh_after_armor: float = rh["hp"]
-	tg.call("_apply_damage", rh, int(rh["armor"]) + 7)      # 7 effective -> -70
+	var rh_chip: float = rh_hp0 - rh_after_armor            # one sub-armor frame's chip
+	tg.call("_apply_damage", rh, int(rh["armor"]) + 7)      # 7 effective -> -70 (plus prior chip)
 	var rh_after_crack: float = rh["hp"]
 	var gl2: Dictionary = tg.call("_new_enemy", TargetsS.KIND_GLITCH, 0.0)
 	var gl_hp0: float = gl2["hp"]
 	tg.call("_apply_damage", gl2, 3)                        # armor 0 -> -30
-	lines.append("armor: rhombus %.0f ->(thin)%.0f ->(crack)%.0f | glitch %.0f ->(3hits)%.0f" % [
-		rh_hp0, rh_after_armor, rh_after_crack, gl_hp0, gl2["hp"]])
-	if rh_after_armor != rh_hp0:
-		lines.append("armor FAIL: thin stream cracked the rhombus"); ok = false
-	if absf(rh_after_crack - (rh_hp0 - 70.0)) > 0.01:
-		lines.append("armor FAIL: excess hits did not chip past armor"); ok = false
+	lines.append("armor: rhombus %.1f ->(thin)%.1f chip=%.1f ->(crack)%.1f | glitch %.0f ->(3hits)%.0f" % [
+		rh_hp0, rh_after_armor, rh_chip, rh_after_crack, gl_hp0, gl2["hp"]])
+	# A single sub-armor frame must be negligible: it can't be ZERO (that was the lockout
+	# bug) but must stay a tiny fraction of the rhombus's HP (no thin-stream one-shot).
+	if rh_chip <= 0.0:
+		lines.append("armor FAIL: sub-armor frame did NO damage (the unkillable-rhombus lockout, #74)"); ok = false
+	if rh_chip > rh_hp0 * 0.02:
+		lines.append("armor FAIL: a single sub-armor frame chipped too much (%.1f of %.0f)" % [rh_chip, rh_hp0]); ok = false
+	# The full-damage path above armor must still chip the excess at DAMAGE_PER_BULLET.
+	if absf(rh_after_crack - (rh_after_armor - 70.0)) > 0.01:
+		lines.append("armor FAIL: excess hits did not chip past armor at full damage"); ok = false
 	if absf(gl2["hp"] - (gl_hp0 - 30.0)) > 0.01:
 		lines.append("armor FAIL: glitch (armor 0) did not take full damage"); ok = false
 	if ok:
-		lines.append("armor OK: rhombus shrugs off ≤armor hits, cracks above; glitch unarmored")
+		lines.append("armor OK: rhombus chips negligibly on ≤armor hits, cracks above; glitch unarmored")
+
+	# 3b) No permanent lockout (#74): a SUSTAINED thin stream at/below armor, applied over
+	#     many frames, must eventually bring a Rhombus to <=0 hp — the regression guard for
+	#     "large magenta enemies are unkillable". (One frame is negligible (3 above); the
+	#     sum over a steady stream must still win.)
+	var rh_sus: Dictionary = tg.call("_new_enemy", TargetsS.KIND_RHOMBUS, 0.0)
+	var sus_armor: int = int(rh_sus["armor"])
+	var sus_frames := 0
+	var sus_cap := 6000                                     # generous bound (~100s @60fps)
+	while float(rh_sus["hp"]) > 0.0 and sus_frames < sus_cap:
+		tg.call("_apply_damage", rh_sus, sus_armor)        # hits == armor every frame
+		sus_frames += 1
+	lines.append("sustained sub-armor: rhombus dead after %d frames (cap %d)" % [sus_frames, sus_cap])
+	if float(rh_sus["hp"]) > 0.0:
+		lines.append("lockout FAIL: a sustained sub-armor stream never killed the rhombus (#74 unkillable)"); ok = false
+	else:
+		lines.append("lockout OK: a sustained thin stream eventually kills a rhombus — no permanent lockout")
 
 	# 4) Fractal split vs clean kill, gated on swarm volume (firepower tier).
 	var split_seen := [0]

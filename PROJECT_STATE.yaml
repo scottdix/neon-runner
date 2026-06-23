@@ -4,8 +4,26 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-23"
-  session: 15
+  session: 16
   notes: >
+    Session 16 (DEVICE FEEDBACK → FIX → SHIP; a detour from #23, which is untouched). Pulled TestFlight
+    beta feedback from the ASC API (betaFeedbackScreenshotSubmissions, app id 6782516475, Spaceship JWT;
+    method saved in agent-memory testflight-feedback-retrieval.md). Logged 6 build-#11 items #70-#75, then
+    fixed ALL via an ultracode Workflow (5 file-disjoint slices) + serialized headless verify:
+    #70 grid black band (grid_floor rect fills REAL viewport, not fixed 1920), #71 grid restyle (depth
+    falloff + calmer warp), #72 ship==Garage (shared build_ship_preview path), #73 Splice Lab (hardened
+    tap targets + REAL fix: apply_splice ran before _volume seed), #74 Rhombus armor lockout (chip floor),
+    #75 battery → thin top strip. Caught 2 harness bugs in verify (MultiMesh readback is black headless;
+    _ready doesn't fire under -s) + fixed the tests; new tools/verify_splice.gd. Shipped build #12 (the 6
+    fixes) — it STALLED in Apple ingestion (>16 min, never appeared), superseded. Round-2 device feedback:
+    ship stuck high/small/pointing-down + run too short → ship line now from REAL viewport height (near
+    actual bottom), SHIP_QUAD 96->168, img.flip_y() so nose points UP (QuadMesh renders textures V-flipped);
+    run length_m 320->640 (40s->80s) + extended schedule (13 gate formations / 14 enemy waves). Shipped
+    build #13 (everything) => VALID (user-confirmed; black band confirmed gone on device). VERIFY: full
+    suite green — 13 suites incl verify_scene (real run.tscn) + verify_splice (neutral 50 -> spliced 200
+    shots through step()). Device-validation tail on #13 (ship look/orientation, grid restyle, Splice
+    tappability, longer-run feel); #71/#72 kept open for it.
+  previous_notes: >
     Session 15 (CODE + SHIP). Built the ENTIRE v0.3.0 visual-identity layer via an ultracode Workflow
     (4 disjoint slices) + serialized headless verify, then shipped TestFlight build #11. Closed #16/#17
     (reactive grid: 8-ripple array + implosion + color-shift), #18 (MultiMesh neon trail — NOT Line2D,
@@ -19,21 +37,6 @@ last_updated:
     into the ship lane (NEON_KEYCHAIN_PW in gitignored fastlane/.env); full runbook in CLAUDE.md.
     SECURITY: scrubbed the keychain password from git history (git filter-repo + force-push); user will
     rotate the key later. Commits: 647a1ea (epic code), 90ebcc9 (deploy automation; post-rewrite SHA).
-  previous_notes: >
-    Session 14 (TRACKER RECONCILIATION — no gameplay code). Audited v0.1.0/v0.2.0/v0.3.0 against the
-    actual codebase via subagent assessments, then closed/relocated issues to match reality. Recurring
-    pattern: many "open" issues were already built or superseded but never closed.
-    v0.1.0 PoC => COMPLETE: closed #1 (epic), #4 (GameState built; persistence in Settings.record_score,
-    not save.json), #5 (ObjectPool SUPERSEDED — fleet/enemies are MultiMesh-batched, not node-pooled);
-    fixed stale ObjectPool refs in project.godot + #62/#12.
-    v0.2.0 Prototype => COMPLETE: closed #7 (epic), #12 (projectile mgr — built in fleet.gd), #14 (collision
-    vs gates — superseded by ship-vs-gate + projectile-vs-enemy), #64 (Bazzite box — WON'T-DO, mac-mini +
-    TestFlight covers device validation). Relocated device/feel-gated leftovers: #54 => v0.5.0 Mobile Opt
-    (#34, device-perf only), #66 => v0.3.0 (#15), #65 => v0.4.0 (#22); target epic checklists updated.
-    v0.3.0 Visual Polish (partial): closed 4 verified-done — #21 (neon styling), #49 (typography/color
-    tokens), #58 (Glitch enemy + all archetypes), #62 (MultiMesh batching; 60fps gate consolidated under
-    #54). REMAINING v0.3.0 is genuine unbuilt work (the visual identity), set as the next focus. Only
-    project.godot (one comment) changed in the tree; everything else was GitHub issue bookkeeping.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
@@ -44,23 +47,26 @@ focus:
   current_issue: "#23 — [Gameplay] Implement feedback manager (screen shake, flash). Wire the already-declared Events.trigger_screen_shake (+ a white-flash hook) into the Run scene as a FeedbackManager, consumed by HUD/camera. This is the v0.4.0 foundation the rest of Game Feel (combo/score-popups/milestones/audio) builds on."
   next_issue: "#24 — [Audio] Create audio manager with sound pooling (then #25 SFX for all game events, #26 combo system, #27 score popups, #28 milestone celebrations; #65 Haptics + #61 adaptive audio also live in v0.4.0)."
   notes: >
-    Session 15 COMPLETED all v0.3.0 visual-identity work (epic #15 closed; #16/#17/#18/#19/#20/#57/#67/#68
-    closed) and shipped TestFlight build #11 (VALID → IN_BETA_TESTING for Patrick/external + internal). Focus
-    now advances to v0.4.0 Game Feel (epic #22). START with #23 FeedbackManager: the Events bus already
-    DECLARES trigger_screen_shake(intensity,duration) but NOTHING emits or consumes it — build a FeedbackManager
-    in the Run scene that listens (camera offset shake + a white screen-flash) and have enemy_destroyed/
-    enemy_breached/gate_passed/gate_hijack_blocked emit it. Then #24 audio manager + #25 SFX (audio/ dir is
-    empty; AudioManager autoload was planned in CLAUDE.md but not built), #26 combo visual feedback (GameState
-    already tracks combo/combo_multiplier — surface it), #27 score popups, #28 milestone celebrations, #65
-    haptics (Haptics autoload exists — wire to feedback tiers), #61 adaptive audio.
-    DEPLOY is now self-service: `fastlane ios ship` unlocks the keychain itself (NEON_KEYCHAIN_PW in gitignored
-    fastlane/.env); full runbook in CLAUDE.md "Shipping to TestFlight". To ship: bump export_presets version →
-    Godot iOS export (exit 1 is expected) → ship → status until VALID → beta_submit for external.
-    PRIORITY device-check on build #11: it is the FIRST GPU render of ALL the session-15 visuals — confirm the
-    neon actually reads (grid ripples, particles, trail/engine, tier punch, bloom). Device backlog unchanged:
-    glow/fonts/haptics/FPS only provable on iPhone (#47); #66 AMOLED open as a device-validation tail; #54/#34
-    is the consolidated device-perf gate. OPS: rotate the keychain password (history was scrubbed via
-    git filter-repo + force-push, but rotation is the real fix); remove Xcode-16.4.0.app (rollback condition met).
+    Session 16 was a DEVICE-FEEDBACK detour (build-#11/#12 TestFlight feedback): logged + fixed #70-#75 and
+    a round-2 ship/run-length pass, shipped build #13 (VALID). #23 was NOT touched and REMAINS the current
+    coding focus. START with #23 FeedbackManager: the Events bus already DECLARES trigger_screen_shake(
+    intensity,duration) but NOTHING emits or consumes it — build a FeedbackManager in the Run scene that
+    listens (camera offset shake + a white screen-flash) and have enemy_destroyed/enemy_breached/gate_passed/
+    gate_hijack_blocked emit it. Then #24 audio manager + #25 SFX (audio/ dir is empty; AudioManager autoload
+    planned in CLAUDE.md but not built), #26 combo visual feedback (GameState already tracks combo/
+    combo_multiplier — surface it), #27 score popups, #28 milestone celebrations, #65 haptics (Haptics
+    autoload exists — wire to feedback tiers), #61 adaptive audio.
+    BUILD #13 DEVICE-CHECK (priority before more code): confirm the ship reads as a big/low/cyan/UPWARD-pointing
+    arrow matching the Garage, grid restyle, Splice Lab TAPPABILITY (#73 fix is defensive — couldn't repro
+    headless), Rhombus now killable, battery out of the way, doubled run feels right. #70 black band already
+    CONFIRMED gone on device. #71/#72 left open as that tail.
+    DEPLOY is self-service: bump export_presets version → Godot iOS export (exit 1 expected) → fastlane ios
+    ship (self-unlocks keychain via NEON_KEYCHAIN_PW) → status until VALID → beta_submit for external. NOTE:
+    Apple ingestion was slow this session (build #12 stalled >16 min and never appeared — re-ship per the
+    runbook if a build is invisible >25 min). Device backlog: glow/fonts/haptics/FPS only provable on iPhone
+    (#47); #66 AMOLED + #71/#72 open as device-validation tails; #54/#34 the consolidated device-perf gate.
+    OPS: rotate the keychain password (history scrubbed via git filter-repo + force-push, but rotation is the
+    real fix); remove Xcode-16.4.0.app (rollback condition long met).
 
 # =============================================================================
 # TRACKER

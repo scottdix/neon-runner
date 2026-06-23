@@ -5,5 +5,5 @@
 [resource]
 script = ExtResource("1")
 display_name = "Level 01"
-length_m = 320.0
+length_m = 640.0
 scroll_speed_mps = 8.0

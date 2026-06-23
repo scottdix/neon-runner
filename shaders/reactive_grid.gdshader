@@ -23,16 +23,27 @@ render_mode blend_add, unshaded;
 // it lives here as a literal; the comment is the contract.
 const int MAX_RIPPLES = 8;
 
+// `resolution` is the ACTUAL covered viewport in px (GridFloor pushes the real
+// visible_rect size, NOT the 1080x1920 design rect — #70). UV*resolution therefore spans
+// the whole device including the tall 19.5:9 region below 1920, so the grid fills it with
+// the SAME cell_size px cells (more rows on a taller screen — density unchanged, no stretch).
 uniform vec2 resolution = vec2(1080.0, 1920.0);
 uniform float cell_size = 96.0;       // grid cell edge in px
-uniform float line_width = 2.5;       // line thickness in px
+uniform float line_width = 1.6;       // line thickness in px (tighter → crisper HDR glow, #71)
 uniform float scroll = 0.0;           // vertical scroll in CELLS (fed from distance)
 uniform vec4 grid_color : source_color = vec4(0.3, 0.3, 3.8, 1.0);  // HDR blue
 uniform float intensity = 0.35;       // overall line brightness (the "~13% faint" look)
 
-// Ambient warp (gentle, always-on breathing of the grid).
-uniform float warp_amp = 7.0;         // px
-uniform float warp_speed = 1.0;
+// Depth falloff (#71): the grid reads as a receding floor — lines near the ship line (the
+// BOTTOM of the screen, UV.y→1) glow brighter, lines toward the horizon (TOP, UV.y→0) dim
+// out. `depth_floor` is the residual brightness at the far top; `depth_gamma` shapes the ramp.
+uniform float depth_floor = 0.22;     // brightness multiplier at the far (top) edge
+uniform float depth_gamma = 1.6;      // >1 keeps the near band bright, fades the far faster
+
+// Ambient warp (gentle, always-on breathing of the grid). Calmed for #71 — the resting
+// state should breathe subtly, not slosh; the reactive ripples (#16/#17) carry the action.
+uniform float warp_amp = 4.0;         // px
+uniform float warp_speed = 0.7;
 
 // Transient ripple ARRAY, poked by Events.trigger_grid_ripple (radial push from a point).
 // A slot is INACTIVE when its ripple_strength is 0; GridFloor zeroes freed slots. Width
@@ -61,9 +72,10 @@ float line_mask(float c) {
 void fragment() {
 	vec2 px = UV * resolution;
 
-	// Ambient sinusoidal warp.
+	// Ambient sinusoidal warp — gentle, low-frequency breathing (calmed for #71). Lower
+	// spatial frequency + amplitude reads as a slow swell rather than a busy ripple.
 	float t = TIME * warp_speed;
-	vec2 warp = vec2(sin(px.y * 0.012 + t * 1.3), sin(px.x * 0.012 + t * 1.1)) * warp_amp;
+	vec2 warp = vec2(sin(px.y * 0.006 + t * 1.3), sin(px.x * 0.006 + t * 1.1)) * warp_amp;
 
 	// Transient radial ripples — SUM every active slot's displacement around its impact
 	// point. An inactive slot (strength 0) contributes nothing (ring scales by strength),
@@ -82,7 +94,12 @@ void fragment() {
 
 	float line = max(line_mask(gx), line_mask(gy));
 
+	// Depth falloff (#71): brighten the near band (bottom, by the ship), fade toward the
+	// horizon (top). Driven by the STABLE screen UV.y — not the warped coord — so the ramp
+	// stays a steady vertical gradient regardless of warp/ripple. UV.y=0 is the far top.
+	float depth = mix(depth_floor, 1.0, pow(clamp(UV.y, 0.0, 1.0), depth_gamma));
+
 	// Color-shift: lerp the grid hue toward the recent action's colour (still HDR → blooms).
 	vec3 col = mix(grid_color.rgb, shift_color.rgb, clamp(shift_amount, 0.0, 1.0));
-	COLOR = vec4(col, line * intensity);
+	COLOR = vec4(col, line * intensity * depth);
 }

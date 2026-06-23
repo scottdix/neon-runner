@@ -1,5 +1,5 @@
 extends SceneTree
-## Headless verification for SLICE C — in-run ship cosmetics (#18 neon trail, #67 engine).
+## Headless verification for SLICE B/C — in-run ship cosmetics + Garage parity.
 ##
 ## Drives Player's PURE cosmetic math directly (no GPU): the trail ring-buffer
 ## (_push_trail_point), the per-instance layout (_trail_layout), and the engine plume
@@ -10,7 +10,11 @@ extends SceneTree
 ##     fade (tail alpha < head alpha);
 ##   - switching trail_index changes the pattern (HELIX yields a lateral offset that
 ##     SLEEK does not);
-##   - _engine_params() differs across STD/PULSAR/WARP, and PULSAR varies with time.
+##   - _engine_params() differs across STD/PULSAR/WARP, and PULSAR varies with time;
+##   - (#72 "what I fly == what I built") the SHARED ship-render path: the in-run ship
+##     and the Garage preview are built by the SAME Player.build_ship_preview(), tinted
+##     by the SELECTED hull colour, and live-recoloured by tint_ship_preview(); the
+##     canonical hull silhouette (_signed_dist_to_poly over HULL_PTS) is non-degenerate.
 ## Run:
 ##   tools/run-headless.sh res://tools/verify_ship.gd /tmp/verify_ship_result.txt
 
@@ -124,8 +128,54 @@ func _initialize() -> void:
 	if not is_equal_approx(float(std["length"]), float(stdB["length"])):
 		lines.append("engine FAIL: STD should be steady over time"); ok = false
 
+	# === 5) SHARED SHIP-RENDER PATH (#72): run ship == Garage preview ========
+	# The Garage and the in-run ship must build the SAME vessel from ONE path:
+	# Player.build_ship_preview() yields a textured-additive-HDR MultiMesh on the canonical
+	# silhouette. We assert the STRUCTURE here (the shared bloom-catching path) + that the
+	# SELECTED hull glow is a real, distinct HDR colour the run/Garage feed into it.
+	# NOTE: MultiMesh per-instance colour/transform CANNOT be read back under --headless —
+	# the dummy RenderingServer drops the instance buffers (get_instance_color returns black,
+	# get_instance_transform returns zero), so the actual tint is DEVICE-ONLY (confirm on the
+	# iPhone that run ship and Garage preview read as the same coloured vessel).
+	ld.set("hull_index", 0)
+	var c0: Color = ld.call("hull_color_hdr")
+	var preview: Node = PlayerS.call("build_ship_preview", c0)
+	var mmesh: MultiMesh = preview.get("multimesh")
+	var pmat: Material = preview.get("material")
+	var ptex: Texture2D = preview.get("texture")
+	var is_add := false
+	if pmat is CanvasItemMaterial:
+		is_add = (pmat as CanvasItemMaterial).blend_mode == CanvasItemMaterial.BLEND_MODE_ADD
+	lines.append("preview: use_colors=%s count=%d additive=%s textured=%s (want true/1/add/tex)" % [
+		str(mmesh.use_colors), mmesh.instance_count, str(is_add), str(ptex != null)])
+	if not mmesh.use_colors or mmesh.instance_count != 1 or not is_add or ptex == null:
+		lines.append("ship FAIL: preview not the shared textured-additive-HDR ship path"); ok = false
+
+	# Selecting a DIFFERENT hull colour must change the HDR glow the ship would carry (the
+	# colour source-of-truth both render paths feed into build_ship_preview/tint_ship_preview).
+	# The retint CALL must not error; its visible effect is device-only (see note above).
+	ld.set("hull_index", 1)
+	var c1: Color = ld.call("hull_color_hdr")
+	PlayerS.call("tint_ship_preview", preview, c1)
+	var hdr0_ok := c0.r > 1.0 or c0.g > 1.0 or c0.b > 1.0
+	var hdr1_ok := c1.r > 1.0 or c1.g > 1.0 or c1.b > 1.0
+	lines.append("live recolour: hull 0->1 glow %s->%s, hdr0=%s hdr1=%s (want changed + both HDR)" % [
+		str(c0), str(c1), str(hdr0_ok), str(hdr1_ok)])
+	if c0 == c1 or not hdr0_ok or not hdr1_ok:
+		lines.append("ship FAIL: hull selection does not change a real HDR glow colour"); ok = false
+	ld.set("hull_index", 0)
+
+	# Canonical hull silhouette is non-degenerate: a point at the hull apex region reads
+	# INSIDE (positive signed distance) and a point well outside the 48-box reads OUTSIDE.
+	var apex: Vector2 = PlayerS.HULL_PTS[0] + Vector2(0.0, 10.0)   # just below the apex, on-axis
+	var d_in: float = pl.call("_signed_dist_to_poly", apex, PlayerS.HULL_PTS)
+	var d_out: float = pl.call("_signed_dist_to_poly", Vector2(-20.0, -20.0), PlayerS.HULL_PTS)
+	lines.append("silhouette: d(inside apex)=%.2f (want >0), d(outside)=%.2f (want <0)" % [d_in, d_out])
+	if d_in <= 0.0 or d_out >= 0.0:
+		lines.append("ship FAIL: canonical hull silhouette degenerate"); ok = false
+
 	if ok:
-		lines.append("ALL OK: trail buffer caps+fades, pattern varies by index, engine modes differ + PULSAR pulses")
+		lines.append("ALL OK: trail buffer caps+fades, pattern varies by index, engine modes differ + PULSAR pulses, run-ship==Garage preview on selected colour")
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write(lines)
 

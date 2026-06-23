@@ -102,6 +102,52 @@ func _initialize() -> void:
 	if mul == add or subc != divc:
 		lines.append("tint FAIL: gate ops did not map to distinct tints"); ok = false
 
+	# === 6) VIEWPORT COVERAGE — NO BOTTOM BAND (#70) =========================
+	# A bare instance's _design is the 1080x1920 default. coverage_size() must FILL a viewport
+	# taller than 1920 (a 19.5:9 iPhone renders ~1080x2340), so the grid reaches the bottom
+	# instead of leaving the dead band the device feedback showed.
+	var g5 = GridS.new()
+	var tall := Vector2(1080.0, 2340.0)               # emulated 19.5:9 portrait device
+	var cover: Vector2 = g5.coverage_size(tall)
+	lines.append("cover: tall %s -> grid %s (want height >= 2340, width >= 1080)" % [str(tall), str(cover)])
+	if cover.y < tall.y or cover.x < tall.x:
+		lines.append("cover FAIL: grid does not cover a taller-than-1920 viewport — band remains"); ok = false
+	# The design rect is the FLOOR — a viewport SMALLER than design still covers the design.
+	var small: Vector2 = g5.coverage_size(Vector2(900.0, 1600.0))
+	lines.append("cover: small viewport -> grid %s (want >= 1080x1920 design floor)" % str(small))
+	if small.x < 1080.0 or small.y < 1920.0:
+		lines.append("cover FAIL: coverage dropped below the design rect"); ok = false
+
+	# === 7) SHADER STILL COMPILES + RIPPLE UNIFORMS INTACT (#70/#71) =========
+	# The restyle (depth falloff, calmer warp) must not break the shader or drop the ripple/
+	# color-shift uniforms the reactivity (#16/#17) pushes every frame.
+	var sh: Shader = load("res://shaders/reactive_grid.gdshader")
+	if sh == null:
+		lines.append("shader FAIL: reactive_grid.gdshader did not load"); ok = false
+	else:
+		var sm := ShaderMaterial.new()
+		sm.shader = sh
+		# Probe every uniform the GDScript flush writes — a typo/removal would make these no-op
+		# silently on the material, so assert each round-trips a set value.
+		var probes := {
+			"ripple_center": PackedVector2Array([Vector2(1.0, 2.0)]),
+			"ripple_radius": PackedFloat32Array([3.0]),
+			"ripple_strength": PackedFloat32Array([4.0]),
+			"ripple_implode": PackedFloat32Array([1.0]),
+			"shift_color": Color(0.3, 0.3, 3.8, 1.0),
+			"shift_amount": 0.5,
+			"resolution": Vector2(1080.0, 2340.0),
+		}
+		for key in probes:
+			sm.set_shader_parameter(key, probes[key])
+		var missing: Array[String] = []
+		for key in probes:
+			if sm.get_shader_parameter(key) == null:
+				missing.append(key)
+		lines.append("shader: ripple/shift/resolution uniforms present, missing=%s (want [])" % str(missing))
+		if not missing.is_empty():
+			lines.append("shader FAIL: reactive uniforms missing after restyle"); ok = false
+
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write(lines)
 

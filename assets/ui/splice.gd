@@ -21,7 +21,16 @@ func _ready() -> void:
 	add_child(UI.backdrop(Settings.amoled_mode))
 	_build_static()
 	_dynamic = Control.new()
+	# Give the layer an EXPLICIT full-design size, not just anchors: a plain Control parent
+	# doesn't re-sort anchored children the way a Container does, so on device the layer could
+	# come up sized (0,0). Its children (cards + SPLICE button) are positioned in DESIGN space,
+	# so the layer must span the full design rect for their hit-test rects to resolve.
 	_dynamic.set_anchors_preset(PRESET_FULL_RECT)
+	_dynamic.size = UI.DESIGN
+	# IGNORE (transparent passthrough): the full-rect layer must NOT be the pick target —
+	# it sits on top of the back chevron, and PASS/STOP here would swallow every tap before
+	# it reached the chrome below. IGNORE still hit-tests the layer's CHILDREN (the cards +
+	# SPLICE button), so the interactive controls inside keep receiving taps.
 	_dynamic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_dynamic)
 	Events.splice_changed.connect(_rebuild)
@@ -73,6 +82,7 @@ func _rebuild() -> void:
 	# SPLICE button — commits the fusion when both slots are filled.
 	var splice := UI.glow_button("SPLICE", gold, Vector2(UI.DESIGN.x - 120.0, 140.0), 50)
 	splice.position = Vector2(60.0, 1660.0)
+	splice.mouse_filter = Control.MOUSE_FILTER_STOP   # solid pick target inside the IGNORE passthrough layer
 	if not SpliceLab.can_splice():
 		splice.modulate = UI.fade(UI.TEXT_BRIGHT, 0.45)
 	_dynamic.add_child(splice)
@@ -181,6 +191,7 @@ func _inventory_card(i: int, pos: Vector2) -> Control:
 	var accent: Color = mod.accent_color()
 	var card := UI.panel(Vector2(250.0, 280.0), UI.fade(accent, 0.5), 0.05, 2.0, 12)
 	card.position = pos
+	card.mouse_filter = Control.MOUSE_FILTER_STOP   # solid pick target inside the IGNORE passthrough layer
 	var icon := UI.orb(20.0, accent)
 	icon.position = Vector2(28.0, 28.0)
 	card.add_child(icon)

@@ -38,7 +38,12 @@ var _battery_fill: ColorRect
 var _distance: float = 0.0
 var _progress: float = 0.0
 
-const BATTERY_BAR := Vector2(420.0, 34.0)
+# Glow Battery is a thin full-width strip pinned to the very TOP EDGE of the screen
+# (above the SCORE/COMBO readout row at y=70) — out of the playfield and clear of the
+# SCORE rect, per DESIGN_SPEC 03·RUN where the status row tops the HUD. Device-only
+# placement (the green bar "very much in the way" on build #11, issue #75).
+const BATTERY_BAR := Vector2(UI.DESIGN.x, 12.0)
+const BATTERY_TOP := 0.0
 # Battery / HUD colours live in Palette (BATTERY_LOW_HUD / BATTERY_HIGH_HUD, kept <=1).
 
 
@@ -46,7 +51,13 @@ func _ready() -> void:
 	var design := Vector2(
 		ProjectSettings.get_setting("display/window/size/viewport_width", 1080),
 		ProjectSettings.get_setting("display/window/size/viewport_height", 1920))
-	var ship_pos := Vector2(design.x * 0.5, design.y - SHIP_BOTTOM_MARGIN)
+	# Place the ship near the ACTUAL bottom of the device viewport, not the fixed 1920
+	# design height. On a tall 19.5:9 phone the real viewport is ~2340 units high, so keying
+	# the ship line off `design.y` (1920) left it stranded ~72% down the screen. Use the real
+	# visible-rect height (floored to the design height so headless/16:9 is unchanged); the
+	# fleet muzzle, breach line, gate-crossing line and finish all derive from this y.
+	var screen_h: float = maxf(get_viewport().get_visible_rect().size.y, design.y)
+	var ship_pos := Vector2(design.x * 0.5, screen_h - SHIP_BOTTOM_MARGIN)
 
 	# Reactive vector grid floor — sits behind everything (its own CanvasLayer -1),
 	# scrolls with distance, warps under action. Built before the environment so the
@@ -192,7 +203,9 @@ func _build_hud() -> void:
 	UI.hit_overlay(pause_btn).pressed.connect(func() -> void: _pause.open())
 
 	# Glow Battery bar (#55) — the health/loss readout. Dark track + colored fill.
-	var bar_pos := Vector2(60, 300)
+	# Thin full-width strip flush to the top edge so it never overlaps SCORE or the play
+	# area (the fill shrinks toward the left as the battery drains — see _on_battery_changed).
+	var bar_pos := Vector2(0.0, BATTERY_TOP)
 	var track := ColorRect.new()
 	track.name = "BatteryTrack"
 	track.position = bar_pos

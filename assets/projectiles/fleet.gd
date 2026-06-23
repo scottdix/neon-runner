@@ -75,12 +75,14 @@ var _splice_speed_mult: float = 1.0
 func _ready() -> void:
 	_rng.seed = 0xF1EE7
 	_build_multimesh()
-	# Read the equipped Splice ONCE at run start, BEFORE seeding the swarm, so a SHOTS bonus
-	# lands on the starting volume and the rate/spread/speed mults are live from the first shot.
+	# Seed the live volume FIRST so apply_splice()'s SHOTS-bonus seeding uses the real
+	# starting spread (it reads _effective_spread() → _volume), not a stale 0.
+	_volume = GameState.projectile_count   # autoload global; valid off-tree + headless
+	# Read the equipped Splice ONCE at run start, BEFORE the first shot, so a SHOTS bonus
+	# lands on the starting swarm and the rate/spread/speed mults are live from frame one.
 	apply_splice()
 	# React to swarm-volume changes from the economy (gates -> GameState -> Events).
 	Events.projectile_count_changed.connect(set_volume)
-	_volume = GameState.projectile_count   # autoload global; valid off-tree + headless
 
 
 ## Read the equipped Splice (SpliceLab.active_modifiers()) and fold it into the run's effective

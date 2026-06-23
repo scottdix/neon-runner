@@ -41,6 +41,9 @@ const SHIFT_DECAY := 0.6
 
 var _mat: ShaderMaterial
 var _design := Vector2(1080, 1920)
+## The full-screen grid quad. Held so the size_changed handler can re-fit it to the ACTUAL
+## visible viewport (#70 — a fixed 1080x1920 rect leaves a dead band on a tall 19.5:9 phone).
+var _rect: ColorRect
 
 ## The ripple pool. Each slot is a Dictionary {active:bool, age:float, center:Vector2,
 ## implode:bool}. Fixed length MAX_RIPPLES, allocated once in _init so the PURE methods
@@ -75,18 +78,27 @@ func _ready() -> void:
 	_flush_ripples()                        # zero every slot so nothing rings at birth
 	_flush_shift()
 
+	# FULL_RECT anchors pin the quad to the whole viewport so it always covers the actual
+	# device, not the 1080x1920 design rect (#70). _fit_to_viewport() then syncs the shader's
+	# `resolution` to the real covered size so cells stay cell_size px (no stretch on tall
+	# screens — just more rows below the old 1920 line).
 	var rect := ColorRect.new()
 	rect.name = "GridRect"
 	rect.material = _mat
-	rect.size = _design
-	rect.position = Vector2.ZERO
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE   # never eat steer touches
+	_rect = rect
 
 	var layer := CanvasLayer.new()
 	layer.name = "GridLayer"
 	layer.layer = -1                                  # behind all world entities
 	layer.add_child(rect)
 	add_child(layer)
+
+	# Fit now, and re-fit whenever the viewport size changes (rotation, resolution, the
+	# editor) so the band can never reappear.
+	get_viewport().size_changed.connect(_fit_to_viewport)
+	_fit_to_viewport()
 
 	Events.distance_changed.connect(_on_distance_changed)
 	Events.trigger_grid_ripple.connect(_on_grid_ripple)
@@ -100,6 +112,31 @@ func _process(delta: float) -> void:
 	advance(delta)
 	_flush_ripples()
 	_flush_shift()
+
+
+# === Viewport coverage (#70 — kill the bottom band) ==========================
+
+## Resize the grid quad to the ACTUAL visible viewport and push that size to the shader's
+## `resolution` so the grid fills any aspect (e.g. a 1080x2340 19.5:9 phone) instead of the
+## fixed 1080x1920 design rect. FULL_RECT already pins the rect; we still set size/resolution
+## explicitly so the shader's px math matches what's on screen and re-fits on size_changed.
+func _fit_to_viewport() -> void:
+	var vp := get_viewport()
+	if vp == null:
+		return
+	var size := coverage_size(vp.get_visible_rect().size)
+	if _rect != null:
+		_rect.position = Vector2.ZERO
+		_rect.size = size
+	if _mat != null:
+		_mat.set_shader_parameter("resolution", size)
+
+## PURE: the px coverage size for a given viewport size. Never smaller than the design rect
+## on either axis, so a viewport TALLER than 1920 (the band case) is fully covered while cell
+## density stays cell_size px (the shader tiles more rows — no stretch). Headless-testable:
+## the verifier feeds it a 2340-tall size and asserts full coverage.
+func coverage_size(viewport_size: Vector2) -> Vector2:
+	return Vector2(maxf(viewport_size.x, _design.x), maxf(viewport_size.y, _design.y))
 
 
 # === PURE pool API (headless-safe; no material, no GPU) ======================
@@ -266,4 +303,5 @@ func set_low_power(low: bool) -> void:
 	if _mat == null:
 		return
 	_mat.set_shader_parameter("intensity", 0.18 if low else 0.35)
-	_mat.set_shader_parameter("warp_amp", 3.0 if low else 7.0)
+	# Standard warp matches the calmed resting baseline (#71); low-power calms it further.
+	_mat.set_shader_parameter("warp_amp", 2.0 if low else 4.0)

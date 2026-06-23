@@ -6,6 +6,10 @@ extends Control
 ## preview off the Events bus. EQUIP just returns to Title — nothing to save by then.
 
 const UI := preload("res://assets/ui/ui_kit.gd")
+# Preload by PATH (not class_name) — the global class cache isn't built under -s
+# (CLAUDE.md headless idiom). #72: the Garage preview is built from Player's SHARED
+# ship-render path so the build screen shows the literal vessel the run flies.
+const PlayerScript := preload("res://assets/player/player.gd")
 
 var _ship: Node2D
 # Selectable controls kept so highlights can be re-rendered after a tap.
@@ -34,8 +38,13 @@ func _build() -> void:
 	var orbit := UI.ring(520.0, UI.fade(cyan, 0.18), 2.0)
 	orbit.position = Vector2(cx - 260.0, 700.0 - 260.0)
 	add_child(orbit)
-	_ship = UI.ship_mark(Loadout.hull_color(), 9.0)
+	# #72: render the EXACT in-run ship (Player's shared textured-additive-HDR path) so
+	# "what I build" == "what I fly". The preview uses the same HDR glow colour the run
+	# does, and the menu WorldEnvironment blooms it the same way.
+	_ship = PlayerScript.build_ship_preview(Loadout.hull_color_hdr())
 	_ship.position = Vector2(cx, 700.0)
+	# Scale the 96px ship quad up to fill the orbit plate as the build-screen hero.
+	_ship.scale = Vector2(2.6, 2.6)
 	add_child(_ship)
 
 	# Tuning sheet.
@@ -140,18 +149,13 @@ func _style_chip(chip: Panel, selected: bool) -> void:
 		label.modulate = UI.TEXT_BRIGHT if selected else Palette.TEXT_MUTED_HUD
 
 
-## Loadout changed (any axis) — re-paint highlights and recolour the ship preview.
+## Loadout changed (any axis) — re-paint highlights and recolour the ship preview live
+## off the Events bus, exactly as the in-run ship recolours (#72).
 func _on_loadout_changed() -> void:
 	_refresh_highlights()
-	_recolor_ship(Loadout.hull_color())
+	_recolor_ship(Loadout.hull_color_hdr())
 
 
-## Recolour the ship_mark preview: ship_mark adds a Line2D outline + a translucent fill.
+## Re-tint the shared ship-preview node to the new HDR hull glow (same call the run uses).
 func _recolor_ship(c: Color) -> void:
-	if _ship == null:
-		return
-	for child in _ship.get_children():
-		if child is Line2D:
-			(child as Line2D).default_color = c
-		elif child is Polygon2D and (child as Polygon2D).color.a < 0.5:
-			(child as Polygon2D).color = UI.fade(c, 0.18)
+	PlayerScript.tint_ship_preview(_ship as MultiMeshInstance2D, c)

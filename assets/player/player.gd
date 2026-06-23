@@ -92,11 +92,45 @@ func _ready() -> void:
 # one Godot's 2D bloom actually picks up. Immediate-mode draw_colored_polygon
 # (the previous approach) never blooms regardless of how bright the color is
 # (confirmed on device twice — see memory glow-immediate-draw-no-bloom).
+#
+# CANONICAL HULL SILHOUETTE (#72). The in-run ship and the Garage build-screen
+# preview MUST be the same vessel ("what I fly == what I built"). They previously
+# diverged: the run drew a fuzzy soft-triangle while the Garage drew a swept
+# arrowhead with a cockpit chevron, so only the hull COLOUR carried over. The fix:
+# both now render from ONE silhouette — the arrowhead below, baked into the ship
+# texture and shared via `build_ship_preview()`, which the Garage calls. The point
+# table mirrors ui_kit.ship_mark's hull (a 48-unit box, apex up, swept tail) so the
+# textured run-ship reads as the same shape the menu draws.
 
 const SHIP_TEX_SIZE := 64
-const SHIP_QUAD := 96.0
+const SHIP_QUAD := 168.0   # on-screen ship footprint — the design wants a prominent hero ship
+
+## The canonical hull outline in a 48×48 design box (apex up the screen, swept-back
+## tail), shared by the in-run ship texture and the Garage preview so they match. The
+## cockpit chevron sits inside it. Kept here (player.gd owns the ship) as the single
+## source of truth for the silhouette both screens render.
+const HULL_BOX := 48.0
+const HULL_PTS: Array[Vector2] = [
+	Vector2(24, 3), Vector2(43, 41), Vector2(24, 31), Vector2(5, 41),
+]
+const COCKPIT_PTS: Array[Vector2] = [
+	Vector2(24, 7), Vector2(30, 26), Vector2(24, 21), Vector2(18, 26),
+]
+
 
 func _build_ship_visual() -> void:
+	var mmi := build_ship_preview(Loadout.hull_color_hdr())
+	mmi.name = "ShipMesh"
+	add_child(mmi)
+	_ship_mesh = mmi
+
+
+## Build ONE neon ship node (textured-additive-HDR MultiMesh) on the canonical
+## silhouette, tinted by `hdr_color`. This is the SHARED render path (#72): the run
+## calls it for the live ship and the Garage calls it for the build-screen preview, so
+## the two are pixel-identical. Static + GPU-light (it allocates an ImageTexture) — it
+## must NOT touch `self`, so the Garage can use it without a Player in the tree.
+static func build_ship_preview(hdr_color: Color) -> MultiMeshInstance2D:
 	var quad := QuadMesh.new()
 	quad.size = Vector2(SHIP_QUAD, SHIP_QUAD)
 	var mm := MultiMesh.new()
@@ -105,26 +139,30 @@ func _build_ship_visual() -> void:
 	mm.mesh = quad
 	mm.instance_count = 1
 	mm.set_instance_transform_2d(0, Transform2D())
-	# Luminance-rich HDR hull colour from the player's loadout; additive + soft mask
-	# makes the cores read white-hot.
-	mm.set_instance_color(0, Loadout.hull_color_hdr())
+	# Luminance-rich HDR hull colour; additive + soft mask makes the core read white-hot.
+	mm.set_instance_color(0, hdr_color)
 	var mmi := MultiMeshInstance2D.new()
-	mmi.name = "ShipMesh"
 	mmi.multimesh = mm
 	mmi.texture = _make_ship_texture()
 	var mat := CanvasItemMaterial.new()
 	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 	mmi.material = mat
-	add_child(mmi)
-	_ship_mesh = mmi
+	return mmi
+
+
+## Re-tint an existing ship-preview node (from `build_ship_preview`) to a new HDR
+## colour. Shared by the run's live recolour and the Garage's `loadout_changed`.
+static func tint_ship_preview(mmi: MultiMeshInstance2D, hdr_color: Color) -> void:
+	if mmi != null and mmi.multimesh != null:
+		mmi.multimesh.set_instance_color(0, hdr_color)
 
 
 ## Re-apply the loadout cosmetics live when the Garage changes them. Hull recolour
 ## (the original contract) PLUS the trail tint and engine plume retune — every axis the
 ## Loadout exposes is now reflected in-run without a reference (Events bus only).
 func _on_loadout_changed() -> void:
-	if _ship_mesh != null and _ship_mesh.multimesh != null:
-		_ship_mesh.multimesh.set_instance_color(0, Loadout.hull_color_hdr())
+	# Re-tint via the SAME shared helper the Garage uses (#72), so run + preview agree.
+	tint_ship_preview(_ship_mesh, Loadout.hull_color_hdr())
 	# Trail strand count keys off the style, so resize its instance budget on a switch.
 	if _trail_mesh != null and _trail_mesh.multimesh != null:
 		_trail_mesh.multimesh.instance_count = _trail_capacity()
@@ -135,26 +173,67 @@ func _on_loadout_changed() -> void:
 		_engine_mesh.multimesh.set_instance_color(0, Loadout.hull_color_hdr())
 
 
-func _make_ship_texture() -> ImageTexture:
-	# A soft-edged upward arrowhead (alpha mask). Shape comes from alpha; the glow
-	# colour comes from the HDR instance color above.
+## Bake the canonical hull silhouette (HULL_PTS + COCKPIT_PTS, the SAME shape the Garage
+## draws) into a soft alpha mask. Shape comes from alpha; the glow colour comes from the
+## HDR instance colour. Static so `build_ship_preview` can call it without a Player.
+## The 48-unit hull box is scaled to fill SHIP_TEX_SIZE with a small margin so the soft
+## edge + faint halo have room.
+static func _make_ship_texture() -> ImageTexture:
 	var img := Image.create(SHIP_TEX_SIZE, SHIP_TEX_SIZE, false, Image.FORMAT_RGBA8)
-	var apex_y := 8.0
-	var base_y := 56.0
-	var cx := SHIP_TEX_SIZE * 0.5
-	var base_half := 26.0
+	# Map the 48-unit design box onto the texture, leaving a margin for the soft halo.
+	var margin := 6.0
+	var scale: float = (SHIP_TEX_SIZE - 2.0 * margin) / HULL_BOX
+	var hull: Array[Vector2] = _scaled_poly(HULL_PTS, scale, margin)
+	var cockpit: Array[Vector2] = _scaled_poly(COCKPIT_PTS, scale, margin)
 	for y in SHIP_TEX_SIZE:
-		var t: float = clampf((float(y) - apex_y) / (base_y - apex_y), 0.0, 1.0)
-		var hw: float = t * base_half
 		for x in SHIP_TEX_SIZE:
-			var dx: float = absf(float(x) - cx)
-			# Signed distance to the triangle edges (positive = inside).
-			var h_dist: float = hw - dx
-			var v_dist: float = minf(float(y) - apex_y, base_y - float(y))
-			var d: float = minf(h_dist, v_dist)
-			var a: float = clampf((d + 5.0) / 9.0, 0.0, 1.0)  # soft edge + faint halo
-			img.set_pixel(x, y, Color(1, 1, 1, a * a))
+			var p := Vector2(float(x) + 0.5, float(y) + 0.5)
+			# Signed distance to the hull (positive inside); the cockpit reads as a
+			# brighter core, so take the brighter of the two contributions.
+			var hd: float = _signed_dist_to_poly(p, hull)
+			var cd: float = _signed_dist_to_poly(p, cockpit)
+			var a_hull: float = clampf((hd + 1.5) / 3.0, 0.0, 1.0)   # soft edge + halo
+			var a_cock: float = clampf((cd + 1.0) / 2.0, 0.0, 1.0)
+			var a: float = maxf(a_hull * a_hull, a_cock)              # cockpit core hotter
+			img.set_pixel(x, y, Color(1, 1, 1, a))
+	# The silhouette is authored apex-up (small y), but a QuadMesh rendered through
+	# MultiMeshInstance2D maps image rows bottom-to-top — so an apex baked at the top renders
+	# pointing DOWN on screen (the radially-symmetric orb/trail textures never exposed this).
+	# Flip vertically so the nose points UP the screen, toward the direction of fire/travel.
+	img.flip_y()
 	return ImageTexture.create_from_image(img)
+
+
+## Scale a 48-box polygon into texture space (apex up = small y), offset by `margin`.
+static func _scaled_poly(pts: Array[Vector2], scale: float, margin: float) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	for v in pts:
+		out.append(v * scale + Vector2(margin, margin))
+	return out
+
+
+## Signed distance from point `p` to a closed polygon: +inside, -outside, magnitude in
+## pixels. Used to soft-mask the hull/cockpit so the silhouette blooms cleanly. Pure
+## math (the classic edge-projection winding test) — GPU-free, headless-safe.
+static func _signed_dist_to_poly(p: Vector2, poly: Array[Vector2]) -> float:
+	var n: int = poly.size()
+	var d: float = INF
+	var inside := false
+	var j: int = n - 1
+	for i in n:
+		var a: Vector2 = poly[i]
+		var b: Vector2 = poly[j]
+		var e: Vector2 = b - a
+		var w: Vector2 = p - a
+		var t: float = clampf(w.dot(e) / maxf(e.length_squared(), 0.0001), 0.0, 1.0)
+		d = minf(d, (w - e * t).length())
+		# Ray-cast winding test for inside/outside.
+		if (a.y > p.y) != (b.y > p.y):
+			var x_cross: float = a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x)
+			if p.x < x_cross:
+				inside = not inside
+		j = i
+	return d if inside else -d
 
 
 # --- Trail + engine rendering (skipped under headless; math above is the truth) ---
