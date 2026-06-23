@@ -4,8 +4,22 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-23"
-  session: 16
+  session: 17
   notes: >
+    Session 17 (DEVICE-FEEDBACK TRIAGE; #23 untouched, still next). Short session that CLOSED OUT the
+    v0.3.0 (Visual Polish) milestone — now 0 open — and fixed a real device bug on build #13. Closed the
+    three device-validation tails: #72 (in-run ship matches Garage — device-confirmed), #71 (grid restyle
+    improved on device), #66 (AMOLED mode functionally correct + persists, but effect is subtle because
+    BG_STANDARD (0.008,0.012,0.04) is already near-black so pure-black contrast is small in normal light).
+    NEW #76 — COMBO/battery readout was clipped by the iPhone 12/12 Pro notch (HUD top row at y≈70 sat
+    under the top safe-area inset): run.gd now has _safe_top_inset() (DisplayServer.get_display_safe_area()
+    → canvas units, uniform under stretch=expand) and shifts SCORE/COMBO/pause + battery strip down by it;
+    0 on notchless/headless so layout unchanged. VERIFY: verify_scene PASS on real run.tscn. NEW #77 —
+    consolidated visual-polish backlog (ship read, grid aesthetic, AMOLED contrast) for a future polish
+    phase. NO new build shipped — user chose to BATCH the #76 notch fix with #23 rather than ship build #14
+    for one cosmetic shift; confirm #76 on device whenever the next build goes out. Stale session-16
+    "build 13 VALID" background poll timed out + surfaced — moot (#13 long since VALID).
+  previous_notes: >
     Session 16 (DEVICE FEEDBACK → FIX → SHIP; a detour from #23, which is untouched). Pulled TestFlight
     beta feedback from the ASC API (betaFeedbackScreenshotSubmissions, app id 6782516475, Spaceship JWT;
     method saved in agent-memory testflight-feedback-retrieval.md). Logged 6 build-#11 items #70-#75, then
@@ -23,20 +37,6 @@ last_updated:
     suite green — 13 suites incl verify_scene (real run.tscn) + verify_splice (neutral 50 -> spliced 200
     shots through step()). Device-validation tail on #13 (ship look/orientation, grid restyle, Splice
     tappability, longer-run feel); #71/#72 kept open for it.
-  previous_notes: >
-    Session 15 (CODE + SHIP). Built the ENTIRE v0.3.0 visual-identity layer via an ultracode Workflow
-    (4 disjoint slices) + serialized headless verify, then shipped TestFlight build #11. Closed #16/#17
-    (reactive grid: 8-ripple array + implosion + color-shift), #18 (MultiMesh neon trail — NOT Line2D,
-    won't bloom) + #67 (engine exhaust; trail/engine apply in-run on loadout_changed), #19/#20 (pooled
-    GPUParticles2D EffectLayer; revived dead spawn_particles signal), #57 (5-tier orb evolution + shatter),
-    #68 (SpliceLab.active_modifiers() consumed by fleet at run start). Closed epic #15. #66 AMOLED kept
-    open (code done, device-validation only). VERIFY: 4 new + 8 regression headless suites PASS incl
-    verify_scene (real run.tscn 420 frames); caught+fixed leaked tool-tags in the grid shader.
-    SHIP: bumped export_presets version, Godot iOS export, fastlane ios ship + beta_submit build:11 →
-    VALID → IN_BETA_TESTING (external Friends&Family/Patrick + internal). SSH keychain-unlock now BAKED
-    into the ship lane (NEON_KEYCHAIN_PW in gitignored fastlane/.env); full runbook in CLAUDE.md.
-    SECURITY: scrubbed the keychain password from git history (git filter-repo + force-push); user will
-    rotate the key later. Commits: 647a1ea (epic code), 90ebcc9 (deploy automation; post-rewrite SHA).
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
@@ -47,24 +47,26 @@ focus:
   current_issue: "#23 — [Gameplay] Implement feedback manager (screen shake, flash). Wire the already-declared Events.trigger_screen_shake (+ a white-flash hook) into the Run scene as a FeedbackManager, consumed by HUD/camera. This is the v0.4.0 foundation the rest of Game Feel (combo/score-popups/milestones/audio) builds on."
   next_issue: "#24 — [Audio] Create audio manager with sound pooling (then #25 SFX for all game events, #26 combo system, #27 score popups, #28 milestone celebrations; #65 Haptics + #61 adaptive audio also live in v0.4.0)."
   notes: >
-    Session 16 was a DEVICE-FEEDBACK detour (build-#11/#12 TestFlight feedback): logged + fixed #70-#75 and
-    a round-2 ship/run-length pass, shipped build #13 (VALID). #23 was NOT touched and REMAINS the current
-    coding focus. START with #23 FeedbackManager: the Events bus already DECLARES trigger_screen_shake(
-    intensity,duration) but NOTHING emits or consumes it — build a FeedbackManager in the Run scene that
-    listens (camera offset shake + a white screen-flash) and have enemy_destroyed/enemy_breached/gate_passed/
-    gate_hijack_blocked emit it. Then #24 audio manager + #25 SFX (audio/ dir is empty; AudioManager autoload
-    planned in CLAUDE.md but not built), #26 combo visual feedback (GameState already tracks combo/
-    combo_multiplier — surface it), #27 score popups, #28 milestone celebrations, #65 haptics (Haptics
-    autoload exists — wire to feedback tiers), #61 adaptive audio.
-    BUILD #13 DEVICE-CHECK (priority before more code): confirm the ship reads as a big/low/cyan/UPWARD-pointing
-    arrow matching the Garage, grid restyle, Splice Lab TAPPABILITY (#73 fix is defensive — couldn't repro
-    headless), Rhombus now killable, battery out of the way, doubled run feels right. #70 black band already
-    CONFIRMED gone on device. #71/#72 left open as that tail.
+    Session 17 closed out the v0.3.0 (Visual Polish) milestone — now 0 open (#72/#71/#66 device-validated +
+    closed; #66 AMOLED is functionally correct but subtle, contrast tuning parked in polish backlog #77) —
+    and fixed #76 (COMBO/battery clipped by the iPhone 12/12 Pro notch: run.gd _safe_top_inset() shifts the
+    HUD top row below the device top safe-area inset; 0 on notchless/headless; verify_scene PASS). #23 is
+    STILL UNTOUCHED and REMAINS the current coding focus.
+    START with #23 FeedbackManager: the Events bus already DECLARES trigger_screen_shake(intensity,duration)
+    but NOTHING emits or consumes it — build a FeedbackManager in the Run scene that listens (camera offset
+    shake + a white screen-flash) and have enemy_destroyed/enemy_breached/gate_passed/gate_hijack_blocked
+    emit it. Then #24 audio manager + #25 SFX (audio/ dir is empty; AudioManager autoload planned in
+    CLAUDE.md but not built), #26 combo visual feedback (GameState already tracks combo/combo_multiplier —
+    surface it), #27 score popups, #28 milestone celebrations, #65 haptics (Haptics autoload exists — wire
+    to feedback tiers), #61 adaptive audio.
+    PENDING DEVICE-CHECK (no build shipped session 17 — user batched the #76 notch fix with #23 rather than
+    ship build #14 for one cosmetic shift): confirm on the NEXT build that the COMBO/battery row clears the
+    notch (#76). Build-#13 tail already confirmed: ship matches Garage, black band gone, grid restyle.
     DEPLOY is self-service: bump export_presets version → Godot iOS export (exit 1 expected) → fastlane ios
     ship (self-unlocks keychain via NEON_KEYCHAIN_PW) → status until VALID → beta_submit for external. NOTE:
-    Apple ingestion was slow this session (build #12 stalled >16 min and never appeared — re-ship per the
-    runbook if a build is invisible >25 min). Device backlog: glow/fonts/haptics/FPS only provable on iPhone
-    (#47); #66 AMOLED + #71/#72 open as device-validation tails; #54/#34 the consolidated device-perf gate.
+    Apple ingestion can stall (build #12 was invisible >16 min — re-ship per the runbook if a build is
+    invisible >25 min). Device backlog: glow/fonts/haptics/FPS only provable on iPhone (#47); polish backlog
+    #77 (ship read, grid aesthetic, AMOLED contrast); #54/#34 the consolidated device-perf gate.
     OPS: rotate the keychain password (history scrubbed via git filter-repo + force-push, but rotation is the
     real fix); remove Xcode-16.4.0.app (rollback condition long met).
 

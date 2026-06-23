@@ -176,25 +176,30 @@ func _build_hud() -> void:
 	layer.name = "HUD"
 	add_child(layer)
 
+	# Push the whole top row down past the device's top safe-area inset (notch / front
+	# camera cutout). On iPhone 12/12 Pro the COMBO readout and battery strip were tucked
+	# under the notch at y≈70 (#76); on a notchless screen / headless this is 0 (no shift).
+	var top: float = _safe_top_inset()
+
 	var score_cap := UI.text("SCORE", Fonts.arcade, 26, Palette.TEXT_DIM_HUD)
-	score_cap.position = Vector2(60, 70)
+	score_cap.position = Vector2(60, 70 + top)
 	layer.add_child(score_cap)
 	_score_value = UI.text("0", Fonts.arcade, 60, Palette.HUD_CYAN)
-	_score_value.position = Vector2(60, 110)
+	_score_value.position = Vector2(60, 110 + top)
 	layer.add_child(_score_value)
 
 	var combo_cap := UI.text("COMBO", Fonts.arcade, 26, Palette.TEXT_DIM_HUD, HORIZONTAL_ALIGNMENT_RIGHT)
 	combo_cap.size.x = 360.0
-	combo_cap.position = Vector2(UI.DESIGN.x - 540.0, 70)
+	combo_cap.position = Vector2(UI.DESIGN.x - 540.0, 70 + top)
 	layer.add_child(combo_cap)
 	_combo_value = UI.text("—", Fonts.arcade, 64, Palette.COMBO_ORANGE_HUD, HORIZONTAL_ALIGNMENT_RIGHT)
 	_combo_value.size.x = 360.0
-	_combo_value.position = Vector2(UI.DESIGN.x - 540.0, 110)
+	_combo_value.position = Vector2(UI.DESIGN.x - 540.0, 110 + top)
 	layer.add_child(_combo_value)
 
 	# Pause button (top-right corner). Raises the pause overlay (#43).
 	var pause_btn := UI.panel(Vector2(96.0, 96.0), Palette.ACCENT_CYAN_HUD, 0.05, 2.0, 12)
-	pause_btn.position = Vector2(UI.DESIGN.x - 156.0, 64.0)
+	pause_btn.position = Vector2(UI.DESIGN.x - 156.0, 64.0 + top)
 	var pl := UI.text("II", Fonts.arcade, 34, Palette.ACCENT_CYAN_HUD, HORIZONTAL_ALIGNMENT_CENTER)
 	pl.set_anchors_preset(Control.PRESET_FULL_RECT)
 	pl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -205,7 +210,7 @@ func _build_hud() -> void:
 	# Glow Battery bar (#55) — the health/loss readout. Dark track + colored fill.
 	# Thin full-width strip flush to the top edge so it never overlaps SCORE or the play
 	# area (the fill shrinks toward the left as the battery drains — see _on_battery_changed).
-	var bar_pos := Vector2(0.0, BATTERY_TOP)
+	var bar_pos := Vector2(0.0, BATTERY_TOP + top)
 	var track := ColorRect.new()
 	track.name = "BatteryTrack"
 	track.position = bar_pos
@@ -223,6 +228,19 @@ func _build_hud() -> void:
 	_pause = PAUSE_SCRIPT.new()
 	_pause.name = "Pause"
 	add_child(_pause)
+
+
+## Top safe-area inset expressed in CANVAS units (the design-space the HUD lays out in).
+## The OS reports the cutout in real SCREEN pixels; under stretch=expand the canvas scales
+## uniformly, so we convert by (visible-canvas-height / window-height). Returns 0 when the
+## device has no top inset and headless (the safe area == the full window). See #76.
+func _safe_top_inset() -> float:
+	var win := DisplayServer.window_get_size()
+	if win.y <= 0:
+		return 0.0
+	var safe := DisplayServer.get_display_safe_area()
+	var to_canvas: float = get_viewport().get_visible_rect().size.y / float(win.y)
+	return maxf(0.0, float(safe.position.y) * to_canvas)
 
 
 func _build_environment() -> void:
