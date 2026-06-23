@@ -1,0 +1,6 @@
+{
+  "name": "Neon Splicer Design Studio",
+  "description": "Interactive mobile UI simulator, feedback center, and Godot 4 developer workstation to refine visual theme, screen flows, shape laboratory, and power-up mechanics for the premium vector game Neon Splicer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

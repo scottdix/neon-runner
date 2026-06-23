@@ -4,8 +4,24 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-23"
-  session: 10
+  session: 11
   notes: >
+    Session 11 (design-direction, NO CODE). Assessed the style-guide/ reference drop — a 6-PNG
+    "optimized design investigation" sheet + a Google AI Studio React app
+    (style-guide/neon-splicer-design-studio/). Used 3 sub-agents (2 Sonnet + 1 Haiku) to explore;
+    key finding: the app is a Gemini TEXT co-designer (shaders/GDScript), NOT an image generator.
+    Folded Scott's rulings into docs/design/DESIGN_SPEC.md (now "second art direction pass"):
+    (1) NAME = Neon Splice (rejected "Splicer"; kept the "splice" verb + "Entropy faction").
+    (2) ADOPTED the brighter palette — ship #00f3ff, enemies hot-rose #ff007f (NEW role), add-gate
+    acid #39ff14, grid blue #1a1aff, hazard #ff3333; kept 3 distinct gate colors (green +/magenta
+    x/red ÷), studio's positive/negative collapse = documented fallback (magenta freed since enemies
+    moved to rose). (3) NEW SECTIONS: Entropy faction (archetype -> mobile render strategy:
+    particles/sprite+shader/baked-UV/parallax), Reactive vector grid, Platform feel (HAPTICS + AMOLED
+    both IN SCOPE for v0.2.0). (4) REJECTED as artifact noise: landscape 2400x1080 (locked portrait
+    1080x1920), GLES (we use Mobile/Vulkan), AI-gen shader snippets (validate on device). style-guide/
+    now committed as reference (5.9M). #53 NOT started (still current). TWO NEW ISSUES PENDING: Haptics
+    + AMOLED mode (not yet filed). Updated memory design-directions-artifact.
+  previous_notes: >
     Session 10. #13 SEGMENT-DRIVEN SPAWNER — all headless-validated (verify_run + verify_combat +
     verify_scene + new verify_spawner all PASS) + code-reviewed (high, no bugs shipped, 2 robustness
     fixes). The level owns ONE authored schedule: LevelDef.gate_formations + enemy_waves (STRING
@@ -20,19 +36,6 @@ last_updated:
     semantics. (4) REVIEW FIXES: a wave defers (never silently lost) if the field is full; gate recycle
     no longer depends on `triggered`. First wave @18m; 7 waves escalate to a dense mixed close.
     NOT device-validated (glow/FPS need a phone — #54 acceptance #2 still open).
-  previous_notes: >
-    Session 9 (autonomous overnight). COMBAT-DEPTH SLICE for v0.2.0 — all headless-validated
-    (verify_run + new verify_combat + new verify_scene all PASS) + code-reviewed (high). (1)
-    REVIEW DEBT #1-#3 PAID: gate economy decoupled — GameState._on_gate_passed commits the new swarm
-    volume + drains the battery on a negative gate; GameState wires the bus in _ready->wire_events()
-    (idempotent; verify scripts call it since autoload _ready is deferred under headless -s). (2) #53
-    ARCHETYPES: Glitch / Looming Rhombus (armored) / Fractal (splits below the firepower tier) /
-    Fractling. (3) #54 BATCHED COLLISION (D3): Fleet.consume_volumes — all enemy volumes vs bullets in
-    ONE pass + x-band cull; consume_near delegates to it. (4) #14 SCALE assertion holds bullets bounded.
-    (5) COMBAT LOOP CLOSED: enemies breaching the ship line drain the Glow Battery (Events.enemy_breached).
-    (6) COMBO: kills route through GameState.register_kill (wires dormant combo/multiplier signals),
-    decays via _tick_combo. (7) REVIEW FIX: per-iteration run_active guard stops a phantom kill after a
-    battery-failing breach. New Events: enemy_breached, enemy_split.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
@@ -43,24 +46,25 @@ focus:
   current_issue: "#53 cross-cutting enemy behaviours — gate-hijack (enemy parks in a gate, must be killed to claim the upgrade) + multiply-through-positive-gate (enemy crossing a + gate duplicates)"
   next_issue: "Device perf pass for #54 (60fps dense fleet+swarm on iPhone, TestFlight build #11) + #8 game state machine (Menu/Playing/Paused/GameOver) to wrap the run in a proper flow"
   notes: >
-    Session 10 DONE: #13 segment-driven spawner — see SESSION-010. The level owns ONE authored
-    schedule (LevelDef.gate_formations + enemy_waves, string ops/kinds), streamed by two decoupled
-    systems: GateSpawner.build_formations(specs) (+ recycle past the ship line) and a wave-driven,
-    FINITE Targets (waves by track_m at world-x; killed/breached/offscreen enemies removed, no
-    respawn). Run wires both after start_run. All headless-green: verify_run/combat/scene/spawner.
-    Code-reviewed (high), 2 robustness fixes (wave defers if field full; gate recycle independent of
-    triggered). Main scene res://assets/levels/run.tscn.
-    NEXT (#53): with archetypes (s9) + scheduled waves (s10) done, build the two cross-cutting enemy
-    interactions — GATE-HIJACK (an enemy parks inside a gate; destroy it before the upgrade applies)
-    and MULTIPLY-THROUGH-POSITIVE-GATE (an enemy crossing a + gate duplicates). These touch both the
-    gate system (gate knows an occupant) and Targets (enemy<->gate position). THEN: device perf pass.
-    NOT YET ON DEVICE: glow/FPS need a phone — #54 acceptance #2 (60fps on a real phone) still OPEN;
-    next ship is TestFlight build #11. Balance is a first guess (first wave @18m; 7 escalating waves)
-    — tune after a device playtest. Schedule lives as @export defaults on LevelDef (v0.5.0 makes it
-    per-level .tres data-driven); avoid editor-saving level_01.tres or it bakes the arrays.
-    UNCOMMITTED at handoff start: untracked style-guide/ (5.7M art PNGs) — NOT in the #13 commit;
-    commit separately. OPS: build #10 still awaiting external Beta App Review. Still open: remove
-    Xcode-16.4.0.app (safe to drop).
+    Session 11 DONE (design-direction, NO CODE): folded the style-guide/ reference drop into
+    docs/design/DESIGN_SPEC.md (now "second art direction pass") — see SESSION-011. NEW PALETTE is
+    locked: ship #00f3ff, enemies hot-rose #ff007f, add-gate #39ff14, multiply-gate magenta #ff2bd6
+    (kept distinct), divide/hazard #ff3333, grid blue #1a1aff. Each Entropy archetype now has a mobile
+    render strategy (Glitch=particles, Rhombus=sprite+shader, Fractal=baked-UV rotation,
+    Singularity=parallax vortex). HAPTICS (15/35/80ms) + AMOLED mode are now v0.2.0 scope.
+    NEXT (#53, NOT started): build the two cross-cutting enemy interactions — GATE-HIJACK (an enemy
+    parks inside a gate; destroy it before the upgrade applies) and MULTIPLY-THROUGH-POSITIVE-GATE (an
+    enemy crossing a + gate duplicates). These touch both the gate system (gate knows an occupant) and
+    Targets (enemy<->gate position). The new direction corroborates both (Rhombus "splits upon gate
+    splicing"; Singularity "pulls the bullet stream"). Can pair with the #53 VISUAL PASS now that the
+    look is specced. THEN: device perf pass. Main scene res://assets/levels/run.tscn.
+    TWO NEW ISSUES TO FILE: Haptics + AMOLED display mode (DESIGN_SPEC "Platform feel" / "How this maps
+    to issues") — Scott ran /handoff before confirming creation; file them next session.
+    GATE-COLOR WATCH: 3 distinct operator colors kept; fallback to studio's 2-color positive/negative
+    if too noisy on a real screen. NOT YET ON DEVICE: glow/FPS + new render strategies all need a phone
+    — #54 acceptance #2 still OPEN; next ship is TestFlight build #11.
+    OPS: build #10 still awaiting external Beta App Review. Still open: remove Xcode-16.4.0.app (safe
+    to drop). style-guide/ (5.9M) is now COMMITTED as design reference.
 
 # =============================================================================
 # TRACKER
