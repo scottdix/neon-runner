@@ -186,6 +186,21 @@ platform :ios do
   # Scheme is filled in once we know the generated project's scheme name.
   desc "Archive + upload to TestFlight"
   lane :ship do |opts|
+    # SSH keychain gotcha (sessions 6/7/15): the distribution identity lives in the
+    # dedicated build/neonrunner.keychain-db. From an interactive login shell the login
+    # session auto-unlocks it; over SSH (or any non-GUI session) it stays LOCKED, so
+    # codesign dies with `errSecInternalComponent` mid-archive (the libswift_Concurrency
+    # signing step). Make `ship` self-contained: unlock it, then grant codesign access to
+    # its private keys via the partition list. Password comes from ENV["NEON_KEYCHAIN_PW"]
+    # (keep it in a gitignored fastlane/.env), defaulting to "" for the fastlane keychain.
+    keychain = File.expand_path("../build/neonrunner.keychain-db", __dir__)
+    kc_pw    = ENV["NEON_KEYCHAIN_PW"] || ""
+    # Unlock + grant codesign access directly via `security` (fastlane's unlock_keychain action
+    # mangles absolute paths, and this version can't set the partition list anyway). log:false
+    # keeps the password out of the fastlane log. Fails loudly if NEON_KEYCHAIN_PW is wrong.
+    sh("security", "unlock-keychain", "-p", kc_pw, keychain, log: false)
+    sh("security", "set-key-partition-list", "-S", "apple-tool:,apple:,codesign:",
+       "-s", "-k", kc_pw, keychain, log: false)
     sigh(
       app_identifier: APP_ID,
       platform: "ios"

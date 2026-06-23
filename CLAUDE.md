@@ -66,11 +66,50 @@ dev box. Godot is at `~/.local/bin/godot`.
     /Applications/Xcode-16.4.0.app/Contents/Developer`). **TODO: remove Xcode-16.4.0.app once a real
     TestFlight upload has succeeded end-to-end** (it cannot build this project, so its only value is
     insurance against an RC-build quirk during signing).
-  - **Still blocked before TestFlight — SIGNING, not toolchain:** the profile + `build/exportOptions.plist`
-    still reference the orphaned old bundle `com.scottdix.neonrunner` (live app is `…neonsplice`), the
-    distribution cert isn't loaded in `build/neonrunner.keychain-db`, and the **App Store Connect app
-    record must be created in the web UI** (Apple has no API for new-app creation — `fastlane`/agent can't).
+  - **TestFlight signing — RESOLVED (session 6) + FULLY AUTOMATED (session 15).** `fastlane ios ship`
+    runs end-to-end on this mini, builds #1–#11 uploaded. The full deploy runbook is its own section
+    below ("Shipping to TestFlight"). `Xcode-16.4.0.app`'s removal condition (a real TestFlight upload
+    succeeding) is long met — safe to delete.
   - Glow/FPS still un-renderable here (Intel UHD 630) — needs a real device or an Apple-Silicon Mac.
+
+## Shipping to TestFlight (automated deploy runbook)
+
+The whole pipeline is automated on this mini (reached over SSH). **Do NOT re-derive it or ask the
+human for the keychain password** — it's baked in. ASC app id `6782516475`, bundle
+`com.scottdix.neonsplice`, team `T4B6VZ9RJR`, API key at
+`~/.appstoreconnect/private_keys/AuthKey_67B57UX826.p8`. Lanes live in `fastlane/Fastfile`.
+
+**Four steps, in order:**
+
+1. **Bump the build number.** Edit `export_presets.cfg` → `application/version` (integer, e.g. `10`→`11`).
+   Apple rejects a duplicate build number. `application/short_version` is the marketing version (`0.1.0`),
+   bump only on a real version change. `application/targeted_device_family` MUST stay `2` (iPhone&iPad) —
+   `1` ships an iPad-only build that TestFlight calls "incompatible" on iPhone.
+2. **Export from Godot** (standard build): `~/.local/bin/godot --headless --path . --import` then
+   `~/.local/bin/godot --headless --path . --export-release "iOS" build/ios/neon_splice.xcodeproj`.
+   **The export EXITS 1 — this is EXPECTED and ignorable**: `build/ios/` lives inside the project, so Godot
+   tries to pack its own prior icon output into the `.pck` (read errors), and its post-export xcodebuild
+   hits the Automatic-vs-`Apple Distribution` signing conflict. The real artifacts (xcodeproj, fresh
+   `neon_splice.pck`, full `AppIcon` set, baked version) are written FIRST. Verify with
+   `grep CURRENT_PROJECT_VERSION build/ios/neon_splice.xcodeproj/project.pbxproj` + a fresh `.pck` mtime.
+3. **`fastlane ios ship`** (run from repo root). It now (a) unlocks `build/neonrunner.keychain-db` and sets
+   the codesign partition list, (b) `sigh`, (c) `build_app` forcing manual signing, (d) `pilot` upload.
+   ~90s total. The keychain password comes from `NEON_KEYCHAIN_PW` in the **gitignored** `fastlane/.env`
+   (the literal value is in the agent-memory signing crib, never in the repo; `.env.example` is the
+   committed template). **Why the unlock step exists:** this
+   box is driven over SSH, so the signing keychain stays LOCKED and codesign dies with
+   `errSecInternalComponent` on `libswift_Concurrency` mid-archive — the lane unlocks it up front.
+4. **Wait + distribute.** `fastlane ios status` until the new build is `state=VALID` (a few min to ~20;
+   a build invisible >25 min is a transient Apple ingestion stall — just re-ship per step 1–3).
+   - **Internal testers** (group "Internal", `scottdix@gmail.com`) get it automatically when VALID — no review.
+   - **External testers** (group "Friends & Family", e.g. Patrick `phresko@gmail.com`) need Beta App Review:
+     `fastlane ios beta_submit build:<N> version:0.1.0`. **KNOWN BUG:** the final "Submit for Review" often
+     fails with "Beta App Description is missing" (a spaceship 2.236 locale bug). If it does, finish in the
+     **ASC web UI** (TestFlight → Friends & Family → Submit for Review). Read-only helpers: `status`,
+     `testers`, `beta_diag build:<N>`. Add a tester: `fastlane ios add_tester email: first: last: group:`.
+
+**Still device-only** (Intel UHD 630 can't render bloom): glow on menus + world, fonts, haptics, real FPS.
+TestFlight on a physical iPhone is the validation surface for all of it.
 
 ## Solo project-management workflow (the operating system for this repo)
 

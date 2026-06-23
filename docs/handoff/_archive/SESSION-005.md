@@ -57,7 +57,7 @@ Logic validates on the standard Godot build headlessly; visuals confirm on the M
   **MacBook Air M2** (Apple Silicon — the clean iOS + glow box; user's daily driver) · dual-boot Bazzite/Win
   PC w/ **Arc B580** (glow + Android + agent host; iOS impossible — see #64).
 - **Signing artifacts** are in `build/` (gitignored): distribution cert + dedicated keychain
-  `build/neonrunner.keychain-db` (password `REDACTED-KEYCHAIN-PW`) + profile, all bound to the mini. Building on the
+  `build/neonrunner.keychain-db` (password redacted — see agent-memory signing crib) + profile, all bound to the mini. Building on the
   M2 Air redoes signing there; the account-level **bundle id + API key carry over** (`.p8` at
   `~/.appstoreconnect/private_keys/AuthKey_67B57UX826.p8`, **outside the repo**).
 - `fastlane/` is committed (Key ID + Issuer ID are identifiers, not secrets; the `.p8` is not in the repo).

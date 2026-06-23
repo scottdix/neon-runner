@@ -55,3 +55,7 @@ Unconfirmed*
 # Signing artifacts + fastlane run reports
 *.mobileprovision
 fastlane/report.xml
+# Secrets for the ship lane (keychain password). NEVER commit the real .env.
+fastlane/.env
+fastlane/.env.*
+!fastlane/.env.example
