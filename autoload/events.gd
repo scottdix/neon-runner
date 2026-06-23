@@ -88,3 +88,11 @@ signal trigger_grid_ripple(position: Vector2, is_implosion: bool)
 ## Run environment swaps to a pitch-black clear + a dimmer bloom/grid path when on.
 ## Re-emitted by Settings whenever the flag changes so live toggling works.
 signal amoled_mode_changed(enabled: bool)
+
+# --- Loadout / Splice (meta-progression: #67 garage, #68 splice lab) ----------
+## The player's ship loadout changed (hull / trail / engine). Garage commits via the
+## Loadout autoload; the in-run ship recolours. Consumers read Loadout for the new values.
+signal loadout_changed
+## The equipped splice changed (#68) — the active spliced-weapon output was updated. The
+## Splice Lab commits via the SpliceLab autoload; consumers read SpliceLab for the output.
+signal splice_changed

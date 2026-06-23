@@ -14,9 +14,11 @@ config/name="Neon Splice"
 config/description="Neon Splice — a fast, glowing geometric runner for iOS & Android."
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
-; MVP core-loop slice: analog steer + always-on fire (#9/#10/#52). The POC glow
-; stress scene (#6) stays in-tree at res://assets/poc/glow_stress.tscn for perf re-tests.
-run/main_scene="res://assets/levels/run.tscn"
+; Boot is the entry point of the 6-screen flow (docs/design/SCREENS.md): it loads, then
+; SceneManager (#60) drives BOOT -> TITLE -> RUN -> RESULTS + the TITLE branches. The Run
+; slice (analog steer + always-on fire #9/#10/#52) is now reached via TITLE > PLAY. The
+; POC glow stress scene (#6) stays in-tree at res://assets/poc/glow_stress.tscn for perf re-tests.
+run/main_scene="res://assets/ui/boot.tscn"
 
 [autoload]
 
@@ -32,10 +34,17 @@ Palette="*res://autoload/palette.gd"
 Fonts="*res://autoload/fonts.gd"
 ; Persisted player options (haptics + AMOLED). Depends on Events (emits on change).
 Settings="*res://autoload/settings.gd"
+; Ship loadout (#67 Garage): hull/trail/engine selection, persisted. Depends on Events.
+Loadout="*res://autoload/loadout.gd"
+; Splice Lab (#68): power-up modifier inventory + fusion, persisted. Depends on Events.
+SpliceLab="*res://autoload/splice_lab.gd"
 ; Run state + economy (projectile_count/score/finish). Depends on Events.
 GameState="*res://autoload/game_state.gd"
-; Tactile feedback tiers. Depends on Events (listens) + Settings (master switch) -> last.
+; Tactile feedback tiers. Depends on Events (listens) + Settings (master switch).
 Haptics="*res://autoload/haptics.gd"
+; Screen-flow driver + app state machine (#60/#8). Listens to Events run terminals; reads
+; GameState for Results. Registered last so every singleton it leans on already exists.
+SceneManager="*res://autoload/scene_manager.gd"
 
 [display]
 

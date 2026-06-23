@@ -23,6 +23,9 @@ var _target_x: float = 540.0
 var _min_x: float = 80.0
 var _max_x: float = 1000.0
 
+## The ship's MultiMesh instance, kept so the loadout hull colour can be re-applied live.
+var _ship_mesh: MultiMeshInstance2D
+
 
 func _ready() -> void:
 	_design_width = float(ProjectSettings.get_setting(
@@ -33,6 +36,8 @@ func _ready() -> void:
 		position.x = _design_width * 0.5
 	_target_x = position.x
 	_build_ship_visual()
+	# Recolour live when the player changes hull in the Garage (CLAUDE.md: bus, no refs).
+	Events.loadout_changed.connect(_on_loadout_changed)
 
 
 # --- Ship visual -------------------------------------------------------------
@@ -54,8 +59,9 @@ func _build_ship_visual() -> void:
 	mm.mesh = quad
 	mm.instance_count = 1
 	mm.set_instance_transform_2d(0, Transform2D())
-	# Luminance-rich cyan HDR; additive + soft mask makes the cores read white-hot.
-	mm.set_instance_color(0, Palette.SHIP_CYAN)
+	# Luminance-rich HDR hull colour from the player's loadout; additive + soft mask
+	# makes the cores read white-hot.
+	mm.set_instance_color(0, Loadout.hull_color_hdr())
 	var mmi := MultiMeshInstance2D.new()
 	mmi.name = "ShipMesh"
 	mmi.multimesh = mm
@@ -64,6 +70,13 @@ func _build_ship_visual() -> void:
 	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 	mmi.material = mat
 	add_child(mmi)
+	_ship_mesh = mmi
+
+
+## Re-apply the loadout hull colour to the ship instance when the Garage changes it.
+func _on_loadout_changed() -> void:
+	if _ship_mesh != null and _ship_mesh.multimesh != null:
+		_ship_mesh.multimesh.set_instance_color(0, Loadout.hull_color_hdr())
 
 
 func _make_ship_texture() -> ImageTexture:

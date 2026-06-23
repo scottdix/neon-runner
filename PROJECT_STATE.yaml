@@ -4,63 +4,57 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-23"
-  session: 12
+  session: 13
   notes: >
-    Session 12 (CODE — big one). Two threads: (A) #53 cross-cutting enemy↔gate interactions (the
-    current issue, DONE) and (B) integrated the session-11 design direction. (A) GATE-HIJACK: an
-    Entropy occupant (tough Rhombus) parks on a flagged gate and rides it; alive at the ship line =>
-    splice DENIED (Events.gate_hijack_blocked, no economy change, red flash, heavy haptic), kill it
-    first => upgrade applies. MULTIPLY-THROUGH: a free enemy crossing a POSITIVE gate band duplicates
-    once (Events.enemy_multiplied); negatives never multiply. Clean ONE-WAY injection: Targets queries
-    an injected GateSpawner (take_pending_hijacks/positive_gate_bands/gate_info/notify_hijack_cleared);
-    spawner holds no Targets ref. Hijack authored on the m=135 ×3 gate. New verify_interactions.gd PASS.
-    (B) DESIGN TOKENS: Palette autoload (HDR + HUD tokens; all entities recolored to the new palette;
-    Entropy faction => hot rose #ff007f varied by intensity per archetype). Fonts autoload (4 OFL fonts
-    bundled in assets/fonts/ + roles + Theme; gate digits/HUD/Results route through Fonts.apply). Reactive
-    grid (shaders/reactive_grid.gdshader + grid_floor.gd; scroll + ambient/ripple warp on kill/breach;
-    AMOLED dim). Haptics autoload (15/35/80ms) + AMOLED mode (Settings autoload, persisted; run.gd swaps
-    clear->#000000 + low bloom + dim grid). Filed #65 (Haptics) + #66 (AMOLED). ALL SIX headless suites
-    PASS (interactions/style/combat/run/scene/spawner). NOT device-validated: palette/rose under bloom,
-    grid glow+warp, haptic feel, font rendering, FPS — all need iPhone (#47/#54) or a glow box (#64).
+    Session 13 (CODE — big UI session). Adopted the Claude Design "Neon Runner Directions" 6-screen
+    flow (imported to docs/design/SCREENS.md; wordmark kept NEON SPLICE per the locked name). Built
+    the WHOLE flow: SceneManager autoload (#60) + app state machine (#8) — BOOT/TITLE/RUN/PAUSED/
+    RESULTS/GARAGE/SPLICE/SETTINGS/HOW_TO_PLAY, decoupled via the Events bus (listens for run terminals
+    => Results); main scene now boot.tscn. Seven screens on a shared neon UI kit (assets/ui/ui_kit.gd):
+    Boot(#48), Title(#41), Results(#44, replaces run.gd inline overlay), Settings(#45, toggles wired),
+    Pause(#43), Garage(#67), Splice(#68), HowToPlay(#69). Run HUD restyled (SCORE/COMBO) + pause button.
+    DATA MODELS: Loadout autoload (#67 hull/trail/engine, persisted, emits loadout_changed; chosen hull
+    recolours the in-run ship live) + SpliceLab autoload + SpliceMod resource (#68 inventory + 2-slot
+    fusion -> output, persisted, emits splice_changed; splice.gd data-driven). New Palette menu tokens;
+    Settings persists best_score; GameState tracks Results peaks. Filed #67/#68/#69. PROCESS: the
+    Garage/Splice/HowToPlay round ran as an ULTRACODE WORKFLOW — 3 disjoint slices in parallel + a
+    serialized verify stage. ALL SEVEN headless suites PASS (new verify_flow + the six prior); clean
+    --import; Title/Splice/HowToPlay/Garage rendered to PNG for layout. NOT device-validated: any glow
+    (menus + world), fonts, haptics, FPS — still iPhone (#47/#54) or glow-box (#64) only.
   previous_notes: >
-    Session 11 (design-direction, NO CODE). Assessed the style-guide/ reference drop — a 6-PNG
-    "optimized design investigation" sheet + a Google AI Studio React app. Folded Scott's rulings into
-    docs/design/DESIGN_SPEC.md (now "second art direction pass"): NAME = Neon Splice; ADOPTED the
-    brighter palette (ship #00f3ff, enemies hot-rose #ff007f, add-gate #39ff14, grid #1a1aff, hazard
-    #ff3333; 3 distinct gate colors kept, positive/negative collapse = fallback); NEW SECTIONS (Entropy
-    faction render-map, reactive grid, Platform feel — HAPTICS + AMOLED both v0.2.0 scope); REJECTED
-    artifact noise (landscape 2400x1080, GLES, AI-gen shader snippets). style-guide/ committed (5.9M).
-    Two issues flagged pending (Haptics + AMOLED) — both FILED + implemented in session 12.
+    Session 12 (CODE). (A) #53 cross-cutting enemy↔gate interactions DONE: GATE-HIJACK (an Entropy
+    Rhombus parks on a flagged gate; alive at the ship line => splice DENIED via Events.gate_hijack_blocked;
+    kill first => upgrade) + MULTIPLY-THROUGH (a free enemy crossing a POSITIVE band duplicates once,
+    Events.enemy_multiplied; negatives never). Clean one-way injection (Targets queries an injected
+    GateSpawner; spawner holds no Targets ref). (B) DESIGN TOKENS: Palette autoload (HDR + HUD), Fonts
+    autoload (4 OFL fonts + Theme), reactive grid (shader + grid_floor.gd), Haptics autoload + AMOLED mode
+    (Settings, persisted). Filed #65 (Haptics) + #66 (AMOLED). All six headless suites PASS. See SESSION-012.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
 # =============================================================================
 focus:
   active_milestone: "v0.2.0 - Playable Prototype"
-  active_epic: "#53 — Entropy enemy faction (enemies + collision)"
-  current_issue: "Device perf pass for #54 (60fps dense fleet+swarm on iPhone, TestFlight build #11) + #8 game state machine (Menu/Playing/Paused/GameOver) to wrap the run in a proper flow"
-  next_issue: "#64 — stand up a glow-capable dev box (Bazzite) to finally validate the device-only backlog (palette/rose bloom, reactive grid glow+warp, haptics, fonts, FPS at scale)"
+  active_epic: "#40 — Phase 8: UI & Release Polish (the 6-screen flow)"
+  current_issue: "Apply the new data models to gameplay + #54 device perf — (1) fleet CONSUMES the spliced output (#68 deeper half: SpliceLab.active_output -> fire behaviour); (2) Garage trail/engine EFFECTS in-run (#67; hull already recolours the ship); (3) #54 60fps dense fleet+swarm on a real device / TestFlight build #11. Screens + data models exist; gameplay hookup is the next codeable slice."
+  next_issue: "#64 — stand up a glow-capable dev box (Bazzite) to validate the device-only backlog (menu + world glow, palette/rose bloom, reactive grid, fonts, haptics, FPS at scale)"
   notes: >
-    Session 11 DONE (design-direction, NO CODE): folded the style-guide/ reference drop into
-    docs/design/DESIGN_SPEC.md (now "second art direction pass") — see SESSION-011. NEW PALETTE is
-    locked: ship #00f3ff, enemies hot-rose #ff007f, add-gate #39ff14, multiply-gate magenta #ff2bd6
-    (kept distinct), divide/hazard #ff3333, grid blue #1a1aff. Each Entropy archetype now has a mobile
-    Session 12 DONE: #53 cross-cutting interactions (gate-hijack + multiply-through) + the full
-    session-11 design-token integration (Palette + Fonts autoloads, reactive grid, haptics, AMOLED).
-    All six headless suites PASS. See SESSION-012.
-    NEXT (current_issue): two codeable-now pieces. (1) #8 GAME STATE MACHINE — wrap the run in
-    Menu/Playing/Paused/GameOver (Events already has game_started/paused/resumed/over; the Results
-    overlay in run.gd is the GameOver stand-in). (2) #54 DEVICE PERF — 60fps dense fleet+swarm, needs
-    a real device/TestFlight build #11. Main scene res://assets/levels/run.tscn.
-    BIG DEVICE BACKLOG (next_issue #64 unblocks it): this box can't render glow, so the new palette/rose
-    under bloom, the reactive grid (glow + warp), haptic feel, font rendering, and FPS-at-scale are ALL
-    unproven on hardware — only logic/wiring is headless-verified. Stand up the Bazzite box (#64) or use
-    the iPhone (#47/#54).
-    OPEN THREADS: #65 (Haptics) + #66 (AMOLED) are foundation-landed, NOT closed — durations + OLED
-    power/look need device tuning; AMOLED toggle still needs the Settings-screen UI (#45). #53 epic kept
-    OPEN (Singularity "pulls the swarm" is concept-only, unbuilt). GATE-COLOR WATCH: 3 distinct operator
-    colors live; 2-color positive/negative fallback documented if too noisy on a real screen.
-    OPS: build #10 awaiting external Beta App Review. Still open: remove Xcode-16.4.0.app (safe to drop).
+    Session 13 DONE: the full Claude-Design 6-screen flow. SceneManager autoload (#60) + state machine
+    (#8) drive BOOT->TITLE->RUN->RESULTS + Title branches (GARAGE/SPLICE/SETTINGS/HOW-TO-PLAY) + Pause;
+    main scene now res://assets/ui/boot.tscn. Seven screens on the shared neon UI kit
+    (assets/ui/ui_kit.gd). Data models landed: Loadout autoload (#67) + SpliceLab autoload + SpliceMod
+    resource (#68), both persisted + Events-decoupled. Built via an ultracode Workflow (3 parallel
+    slices + serialized verify). See SESSION-013. CLOSED this session: #8 #60 #48 #41 #44 #43 #45 #69.
+    NEXT (current_issue): the gameplay HOOKUP — the splice output + loadout trail/engine are stored but
+    NOT yet consumed by the fleet/run (only hull recolour is wired). Plus #54 device perf (needs device).
+    DESIGN: docs/design/SCREENS.md is the screen-flow spec (downstream of DESIGN_SPEC.md). Menu/screen
+    glow uses LDR (_HUD) tokens — crisp, deliberately out of bloom; soft neon halos on menus are a
+    device-validated enhancement, NOT done. Naming: design wordmark said "NEON RUNNER" but kept Neon Splice.
+    BIG DEVICE BACKLOG (next_issue #64 unblocks): this box can't render bloom, so ALL glow (menus + world),
+    fonts, haptics, FPS-at-scale are unproven — only logic/wiring is headless-verified (7 suites PASS).
+    OPEN THREADS: #42 HUD open (core readout on-design; score popups #27 + juice later). #67/#68 open
+    (gameplay application remains). SpliceLab.equip_next replaces slot B when both full — confirm vs intent.
+    #65/#66/#53 still open from prior. OPS: build #10 awaiting Beta App Review; remove Xcode-16.4.0.app.
 
 # =============================================================================
 # TRACKER

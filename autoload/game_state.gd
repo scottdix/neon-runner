@@ -54,6 +54,13 @@ var combo: int = 0
 var combo_multiplier: float = 1.0
 var _combo_timer: float = 0.0
 
+## Results-screen stats (#44/SCREENS.md): peaks tracked across the run, finalised on a
+## terminal. `is_new_best` drives the NEW BEST badge (Settings persists the best score).
+var peak_multiplier: float = 1.0
+var peak_fleet: int = 0
+var best_combo: int = 0
+var is_new_best: bool = false
+
 
 func _ready() -> void:
 	wire_events()
@@ -91,6 +98,10 @@ func start_run() -> void:
 	combo = 0
 	combo_multiplier = 1.0
 	_combo_timer = 0.0
+	peak_multiplier = 1.0
+	peak_fleet = 0
+	best_combo = 0
+	is_new_best = false
 	set_projectile_count(START_PROJECTILES)
 	Events.score_changed.emit(score)
 	Events.distance_changed.emit(distance, 0.0)
@@ -117,6 +128,7 @@ func fail_run() -> void:
 		return
 	run_active = false
 	run_won = false
+	is_new_best = Settings.record_score(score)
 	Events.grid_collapsed.emit()
 
 
@@ -142,6 +154,7 @@ func complete_run() -> void:
 	run_active = false
 	run_won = true
 	distance = active_level.length_m if active_level != null else distance
+	is_new_best = Settings.record_score(score)
 	Events.run_completed.emit(score, distance)
 
 
@@ -176,6 +189,8 @@ func register_kill(base_points: int) -> int:
 	combo += 1
 	_combo_timer = COMBO_WINDOW
 	combo_multiplier = clampf(1.0 + COMBO_STEP * float(combo - 1), 1.0, MAX_COMBO_MULT)
+	peak_multiplier = maxf(peak_multiplier, combo_multiplier)
+	best_combo = maxi(best_combo, combo)
 	var pts: int = int(round(float(base_points) * combo_multiplier))
 	score += pts
 	Events.score_changed.emit(score)
@@ -201,6 +216,7 @@ func _tick_combo(delta: float) -> void:
 ## deltas via `add_projectiles`; callers that overwrite use this directly.
 func set_projectile_count(count: int) -> void:
 	var clamped: int = maxi(0, count)
+	peak_fleet = maxi(peak_fleet, clamped)
 	if clamped == projectile_count:
 		return
 	projectile_count = clamped

@@ -19,6 +19,8 @@ const TARGETS_SCRIPT := preload("res://assets/obstacles/targets.gd")
 const FINISH_LINE_SCRIPT := preload("res://assets/levels/finish_line.gd")
 const GATE_SPAWNER_SCRIPT := preload("res://assets/gates/gate_spawner.gd")
 const GRID_FLOOR_SCRIPT := preload("res://assets/levels/grid_floor.gd")
+const PAUSE_SCRIPT := preload("res://assets/ui/pause.gd")
+const UI := preload("res://assets/ui/ui_kit.gd")
 
 var _player: Node2D
 var _fleet: Node2D
@@ -27,7 +29,9 @@ var _finish_line: Node2D
 var _gates: Node2D
 var _grid: Node2D
 var _env: Environment
-var _hud: Label
+var _score_value: Label
+var _combo_value: Label
+var _pause: CanvasLayer
 var _battery_fill: ColorRect
 var _distance: float = 0.0
 var _progress: float = 0.0
@@ -92,11 +96,11 @@ func _ready() -> void:
 	add_child(_finish_line)
 
 	_build_hud()
+	# Run no longer reacts to the run terminals — SceneManager listens for run_completed /
+	# grid_collapsed and swaps to the Results screen (#44), freeing this scene.
 	Events.player_steered.connect(_on_player_steered)
 	Events.distance_changed.connect(_on_distance_changed)
-	Events.run_completed.connect(_on_run_completed)
 	Events.glow_battery_changed.connect(_on_battery_changed)
-	Events.grid_collapsed.connect(_on_grid_collapsed)
 	Events.amoled_mode_changed.connect(_on_amoled_mode_changed)
 
 	GameState.start_run()
@@ -113,12 +117,16 @@ func _process(delta: float) -> void:
 	# Advance the finite-level scroll (GameState integrates distance + trips the
 	# finish line / win). Run drives the frame; GameState owns the state.
 	GameState.tick_run(delta)
-	if _hud:
-		_hud.text = "FPS %d   swarm %d\nscore %d   kills %d\ncombo %d  ×%.1f\ndist %dm  %d%%" % [
-			Engine.get_frames_per_second(), GameState.projectile_count,
-			GameState.score, (_targets.kills if _targets else 0),
-			GameState.combo, GameState.combo_multiplier,
-			int(_distance), int(_progress * 100.0)]
+	if _score_value:
+		_score_value.text = UI.commafy(GameState.score)
+	if _combo_value:
+		_combo_value.text = "×%d" % GameState.combo if GameState.combo > 0 else "—"
+
+
+## Pause on the back/escape action (also wired to the on-screen pause button).
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel") and _pause != null:
+		_pause.open()
 
 
 func _on_player_steered(x: float, _x_norm: float) -> void:
@@ -131,20 +139,6 @@ func _on_distance_changed(distance: float, progress: float) -> void:
 	_progress = progress
 
 
-## WIN — finish line crossed. Show the "RUN COMPLETE" Results and freeze the game.
-func _on_run_completed(final_score: int, distance: float) -> void:
-	_build_results_overlay("RUN COMPLETE", Palette.WIN_GREEN_HUD, final_score, distance, false)
-	get_tree().paused = true
-
-
-## LOSS — Glow Battery emptied (#55). The grid collapses to a dark dead state and
-## we show the loss Results. Shares the win overlay path; the dark backdrop is the
-## MVP stand-in for the reactive-grid collapse animation (that lands with the grid).
-func _on_grid_collapsed() -> void:
-	_build_results_overlay("GRID COLLAPSE", Palette.LOSS_RED_HUD, GameState.score, _distance, true)
-	get_tree().paused = true
-
-
 func _on_battery_changed(value: float, max_value: float) -> void:
 	if _battery_fill == null:
 		return
@@ -154,19 +148,40 @@ func _on_battery_changed(value: float, max_value: float) -> void:
 
 
 func _build_hud() -> void:
-	# Separate CanvasLayer, modulate <=1 so the readout stays OUT of the bloom.
+	# Separate CanvasLayer, colours kept <=1 so the readout stays OUT of the bloom (03 RUN,
+	# docs/design/SCREENS.md): SCORE top-left, COMBO ×N top-right, Glow Battery bar, pause.
 	var layer := CanvasLayer.new()
 	layer.name = "HUD"
 	add_child(layer)
-	_hud = Label.new()
-	_hud.position = Vector2(36, 60)
-	_hud.modulate = Palette.HUD_CYAN
-	_hud.add_theme_font_size_override("font_size", 40)
-	Fonts.apply(_hud, Fonts.mono)           # Share Tech Mono — legible multi-line debug readout
-	layer.add_child(_hud)
+
+	var score_cap := UI.text("SCORE", Fonts.arcade, 26, Palette.TEXT_DIM_HUD)
+	score_cap.position = Vector2(60, 70)
+	layer.add_child(score_cap)
+	_score_value = UI.text("0", Fonts.arcade, 60, Palette.HUD_CYAN)
+	_score_value.position = Vector2(60, 110)
+	layer.add_child(_score_value)
+
+	var combo_cap := UI.text("COMBO", Fonts.arcade, 26, Palette.TEXT_DIM_HUD, HORIZONTAL_ALIGNMENT_RIGHT)
+	combo_cap.size.x = 360.0
+	combo_cap.position = Vector2(UI.DESIGN.x - 540.0, 70)
+	layer.add_child(combo_cap)
+	_combo_value = UI.text("—", Fonts.arcade, 64, Palette.COMBO_ORANGE_HUD, HORIZONTAL_ALIGNMENT_RIGHT)
+	_combo_value.size.x = 360.0
+	_combo_value.position = Vector2(UI.DESIGN.x - 540.0, 110)
+	layer.add_child(_combo_value)
+
+	# Pause button (top-right corner). Raises the pause overlay (#43).
+	var pause_btn := UI.panel(Vector2(96.0, 96.0), Palette.ACCENT_CYAN_HUD, 0.05, 2.0, 12)
+	pause_btn.position = Vector2(UI.DESIGN.x - 156.0, 64.0)
+	var pl := UI.text("II", Fonts.arcade, 34, Palette.ACCENT_CYAN_HUD, HORIZONTAL_ALIGNMENT_CENTER)
+	pl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	pause_btn.add_child(pl)
+	layer.add_child(pause_btn)
+	UI.hit_overlay(pause_btn).pressed.connect(func() -> void: _pause.open())
 
 	# Glow Battery bar (#55) — the health/loss readout. Dark track + colored fill.
-	var bar_pos := Vector2(36, 270)
+	var bar_pos := Vector2(60, 300)
 	var track := ColorRect.new()
 	track.name = "BatteryTrack"
 	track.position = bar_pos
@@ -180,29 +195,10 @@ func _build_hud() -> void:
 	_battery_fill.color = Palette.BATTERY_HIGH_HUD
 	layer.add_child(_battery_fill)
 
-
-func _build_results_overlay(title: String, color: Color, final_score: int, distance: float, darken: bool) -> void:
-	# Minimal Results (DESIGN_SPEC screen 04), win or loss. On its own CanvasLayer
-	# (out of the bloom) and PROCESS_MODE_ALWAYS so it survives the tree pause. The
-	# full Results screen (stats + RETRY/MENU buttons) is #44.
-	var layer := CanvasLayer.new()
-	layer.name = "Results"
-	layer.process_mode = Node.PROCESS_MODE_ALWAYS
-	add_child(layer)
-	if darken:
-		var bg := ColorRect.new()                  # the "dark dead state" of a collapse
-		bg.color = Color(0.0, 0.0, 0.0, 0.82)
-		bg.anchors_preset = Control.PRESET_FULL_RECT
-		layer.add_child(bg)
-	var label := Label.new()
-	label.text = "%s\n\nSCORE %d\nDISTANCE %dm" % [title, final_score, int(distance)]
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.modulate = color                          # kept <=1 (HUD path, no bloom)
-	label.add_theme_font_size_override("font_size", 96)
-	Fonts.apply(label, Fonts.display)               # Orbitron — the big results wordmark/score
-	label.anchors_preset = Control.PRESET_FULL_RECT
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	layer.add_child(label)
+	# Pause overlay — created hidden; raised by the pause button / ui_cancel (#43).
+	_pause = PAUSE_SCRIPT.new()
+	_pause.name = "Pause"
+	add_child(_pause)
 
 
 func _build_environment() -> void:

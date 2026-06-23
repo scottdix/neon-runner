@@ -76,3 +76,16 @@ const LOSS_RED_HUD := Color(1.0, 0.5, 0.45)     # "GRID COLLAPSE" overlay text
 const BATTERY_LOW_HUD := Color(1.0, 0.3, 0.3)   # empty battery (red)
 const BATTERY_HIGH_HUD := Color(0.35, 1.0, 0.6) # full battery (green)
 const BATTERY_TRACK_HUD := Color(0.06, 0.08, 0.12)
+
+# --- Menu / screen UI (the 6-screen flow, docs/design/SCREENS.md) ------------
+## These are the LDR (<= 1.0) tokens for the BOOT/TITLE/RESULTS/GARAGE/SPLICE/SETTINGS
+## CanvasLayer screens — crisp UI, deliberately out of the bloom (same discipline as the
+## in-run HUD). Soft neon halos on menus are a device-validated enhancement (#47/#64); the
+## colour identity is locked here. Hexes from docs/design/SCREENS.md.
+const ACCENT_CYAN_HUD := Color(0.13, 0.91, 1.0)  # #22e7ff — primary accent / default buttons
+const MENU_GOLD_HUD := Color(1.0, 0.88, 0.30)    # #ffe14d — swarm orbs / BEST / engine accent
+const MENU_MAGENTA_HUD := Color(1.0, 0.17, 0.84) # #ff2bd6 — ×multiply / MOD A
+const MENU_MINT_HUD := Color(0.17, 1.0, 0.62)    # #2bff9e — +add / RUN COMPLETE
+const SCREEN_PANEL_HUD := Color(0.05, 0.07, 0.10)# tuning-sheet / panel fill
+const TEXT_MUTED_HUD := Color(0.62, 0.71, 0.78)  # #9fb4c6 — subtitles / stat labels
+const TEXT_DIM_HUD := Color(0.36, 0.49, 0.56)    # #5d7d8f — faint captions / section labels
