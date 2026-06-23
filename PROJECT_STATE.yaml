@@ -4,57 +4,57 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-23"
-  session: 13
+  session: 14
   notes: >
-    Session 13 (CODE — big UI session). Adopted the Claude Design "Neon Runner Directions" 6-screen
-    flow (imported to docs/design/SCREENS.md; wordmark kept NEON SPLICE per the locked name). Built
-    the WHOLE flow: SceneManager autoload (#60) + app state machine (#8) — BOOT/TITLE/RUN/PAUSED/
-    RESULTS/GARAGE/SPLICE/SETTINGS/HOW_TO_PLAY, decoupled via the Events bus (listens for run terminals
-    => Results); main scene now boot.tscn. Seven screens on a shared neon UI kit (assets/ui/ui_kit.gd):
-    Boot(#48), Title(#41), Results(#44, replaces run.gd inline overlay), Settings(#45, toggles wired),
-    Pause(#43), Garage(#67), Splice(#68), HowToPlay(#69). Run HUD restyled (SCORE/COMBO) + pause button.
-    DATA MODELS: Loadout autoload (#67 hull/trail/engine, persisted, emits loadout_changed; chosen hull
-    recolours the in-run ship live) + SpliceLab autoload + SpliceMod resource (#68 inventory + 2-slot
-    fusion -> output, persisted, emits splice_changed; splice.gd data-driven). New Palette menu tokens;
-    Settings persists best_score; GameState tracks Results peaks. Filed #67/#68/#69. PROCESS: the
-    Garage/Splice/HowToPlay round ran as an ULTRACODE WORKFLOW — 3 disjoint slices in parallel + a
-    serialized verify stage. ALL SEVEN headless suites PASS (new verify_flow + the six prior); clean
-    --import; Title/Splice/HowToPlay/Garage rendered to PNG for layout. NOT device-validated: any glow
-    (menus + world), fonts, haptics, FPS — still iPhone (#47/#54) or glow-box (#64) only.
+    Session 14 (TRACKER RECONCILIATION — no gameplay code). Audited v0.1.0/v0.2.0/v0.3.0 against the
+    actual codebase via subagent assessments, then closed/relocated issues to match reality. Recurring
+    pattern: many "open" issues were already built or superseded but never closed.
+    v0.1.0 PoC => COMPLETE: closed #1 (epic), #4 (GameState built; persistence in Settings.record_score,
+    not save.json), #5 (ObjectPool SUPERSEDED — fleet/enemies are MultiMesh-batched, not node-pooled);
+    fixed stale ObjectPool refs in project.godot + #62/#12.
+    v0.2.0 Prototype => COMPLETE: closed #7 (epic), #12 (projectile mgr — built in fleet.gd), #14 (collision
+    vs gates — superseded by ship-vs-gate + projectile-vs-enemy), #64 (Bazzite box — WON'T-DO, mac-mini +
+    TestFlight covers device validation). Relocated device/feel-gated leftovers: #54 => v0.5.0 Mobile Opt
+    (#34, device-perf only), #66 => v0.3.0 (#15), #65 => v0.4.0 (#22); target epic checklists updated.
+    v0.3.0 Visual Polish (partial): closed 4 verified-done — #21 (neon styling), #49 (typography/color
+    tokens), #58 (Glitch enemy + all archetypes), #62 (MultiMesh batching; 60fps gate consolidated under
+    #54). REMAINING v0.3.0 is genuine unbuilt work (the visual identity), set as the next focus. Only
+    project.godot (one comment) changed in the tree; everything else was GitHub issue bookkeeping.
   previous_notes: >
-    Session 12 (CODE). (A) #53 cross-cutting enemy↔gate interactions DONE: GATE-HIJACK (an Entropy
-    Rhombus parks on a flagged gate; alive at the ship line => splice DENIED via Events.gate_hijack_blocked;
-    kill first => upgrade) + MULTIPLY-THROUGH (a free enemy crossing a POSITIVE band duplicates once,
-    Events.enemy_multiplied; negatives never). Clean one-way injection (Targets queries an injected
-    GateSpawner; spawner holds no Targets ref). (B) DESIGN TOKENS: Palette autoload (HDR + HUD), Fonts
-    autoload (4 OFL fonts + Theme), reactive grid (shader + grid_floor.gd), Haptics autoload + AMOLED mode
-    (Settings, persisted). Filed #65 (Haptics) + #66 (AMOLED). All six headless suites PASS. See SESSION-012.
+    Session 13 (CODE — big UI session). Adopted the Claude Design 6-screen flow (docs/design/SCREENS.md;
+    wordmark kept NEON SPLICE). Built the WHOLE flow: SceneManager autoload (#60) + app state machine (#8)
+    — BOOT/TITLE/RUN/PAUSED/RESULTS/GARAGE/SPLICE/SETTINGS/HOW_TO_PLAY via Events bus; main scene boot.tscn.
+    Seven screens on a shared neon UI kit (assets/ui/ui_kit.gd): Boot(#48), Title(#41), Results(#44),
+    Settings(#45), Pause(#43), Garage(#67), Splice(#68), HowToPlay(#69). DATA MODELS: Loadout autoload
+    (#67 hull/trail/engine, persisted; hull recolours the ship live) + SpliceLab autoload + SpliceMod
+    resource (#68 inventory + 2-slot fusion -> output, persisted). Ran as an ULTRACODE WORKFLOW (3 parallel
+    slices + serialized verify). ALL SEVEN headless suites PASS. NOT device-validated: glow/fonts/haptics/FPS.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
 # =============================================================================
 focus:
-  active_milestone: "v0.2.0 - Playable Prototype"
-  active_epic: "#40 — Phase 8: UI & Release Polish (the 6-screen flow)"
-  current_issue: "Apply the new data models to gameplay + #54 device perf — (1) fleet CONSUMES the spliced output (#68 deeper half: SpliceLab.active_output -> fire behaviour); (2) Garage trail/engine EFFECTS in-run (#67; hull already recolours the ship); (3) #54 60fps dense fleet+swarm on a real device / TestFlight build #11. Screens + data models exist; gameplay hookup is the next codeable slice."
-  next_issue: "#64 — stand up a glow-capable dev box (Bazzite) to validate the device-only backlog (menu + world glow, palette/rose bloom, reactive grid, fonts, haptics, FPS at scale)"
+  active_milestone: "v0.3.0 - Visual Polish"
+  active_epic: "#15 — Phase 4: Neon Aesthetic"
+  current_issue: "ALL open v0.3.0 issues, in ONE PASS via an ultracode Workflow next session — #16 + #17 (reactive grid: 8-ripple array + implosion mode + color-shift), #18 (neon trail via Line2D), #19 (explosion particles GPUParticles2D), #20 (collection/multiply particles), #57 (projectile tier evolution: 5 tiers + shatter), #66 (AMOLED — code done, device-validate), #67 (Garage trail/engine EFFECTS in-run; hull already applies), #68 (fleet CONSUMES SpliceLab.active_output -> fire behaviour). Two tracks: aesthetic layer (mostly unbuilt) + gameplay hookup (data exists, not consumed)."
+  next_issue: "#22 — Phase 5: Game Feel (v0.4.0) epic (shake/flash/audio/combo/score-popups/milestones; #65 Haptics also lives here now)"
   notes: >
-    Session 13 DONE: the full Claude-Design 6-screen flow. SceneManager autoload (#60) + state machine
-    (#8) drive BOOT->TITLE->RUN->RESULTS + Title branches (GARAGE/SPLICE/SETTINGS/HOW-TO-PLAY) + Pause;
-    main scene now res://assets/ui/boot.tscn. Seven screens on the shared neon UI kit
-    (assets/ui/ui_kit.gd). Data models landed: Loadout autoload (#67) + SpliceLab autoload + SpliceMod
-    resource (#68), both persisted + Events-decoupled. Built via an ultracode Workflow (3 parallel
-    slices + serialized verify). See SESSION-013. CLOSED this session: #8 #60 #48 #41 #44 #43 #45 #69.
-    NEXT (current_issue): the gameplay HOOKUP — the splice output + loadout trail/engine are stored but
-    NOT yet consumed by the fleet/run (only hull recolour is wired). Plus #54 device perf (needs device).
-    DESIGN: docs/design/SCREENS.md is the screen-flow spec (downstream of DESIGN_SPEC.md). Menu/screen
-    glow uses LDR (_HUD) tokens — crisp, deliberately out of bloom; soft neon halos on menus are a
-    device-validated enhancement, NOT done. Naming: design wordmark said "NEON RUNNER" but kept Neon Splice.
-    BIG DEVICE BACKLOG (next_issue #64 unblocks): this box can't render bloom, so ALL glow (menus + world),
-    fonts, haptics, FPS-at-scale are unproven — only logic/wiring is headless-verified (7 suites PASS).
-    OPEN THREADS: #42 HUD open (core readout on-design; score popups #27 + juice later). #67/#68 open
-    (gameplay application remains). SpliceLab.equip_next replaces slot B when both full — confirm vs intent.
-    #65/#66/#53 still open from prior. OPS: build #10 awaiting Beta App Review; remove Xcode-16.4.0.app.
+    Session 14 reconciled the tracker: v0.1.0 + v0.2.0 are now COMPLETE (no open issues); v0.3.0 is the
+    active milestone with genuine unbuilt work. Pointer set per user request to epic #15 / current_issue =
+    ALL open v0.3.0 issues, to be knocked out in ONE PASS via an ULTRACODE WORKFLOW next session.
+    PLAN the workflow as disjoint slices + a serialized headless-verify stage: (A) effects layer shared by
+    #19/#20 (no GPUParticles2D exists yet; Events.spawn_particles is declared but NEVER emitted — wire it);
+    (B) grid ripple pool shared by #16/#17 (shader is portrait-correct + single-ripple today; needs
+    MAX_RIPPLES=8 array, per-ripple age/origin/type, slot eviction, implosion path for divide gates,
+    color-shift); (C) #18 neon trail renderer (no Line2D exists; read Loadout.trail_index); (D) #57 tier
+    framework in fleet.gd (threshold table + _current_tier() + per-tier shape/shatter; volume currently
+    only drives fire-rate/spread); (E) GAMEPLAY HOOKUP — #67 trail/engine apply in-run (hull already does
+    via Loadout.hull_color_hdr()), #68 fleet reads SpliceLab.active_output at run start (parse stat/magnitude
+    -> fire-rate/spread/start-projectiles); (F) #66 AMOLED is code-done, only device-validation remains.
+    VERIFY: the 7 existing headless suites must still PASS + add coverage for the new hookups (#67/#68 apply,
+    #57 tier transitions, particle/grid wiring). DEVICE BACKLOG (unchanged, all unproven on this box): glow
+    (menus + world), fonts, haptics, FPS-at-scale — validate via iPhone/TestFlight (#47); #54 is the single
+    consolidated device-perf gate (now v0.5.0 #34). OPS: remove Xcode-16.4.0.app; build #10 awaiting Beta App Review.
 
 # =============================================================================
 # TRACKER

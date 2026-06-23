@@ -23,8 +23,8 @@ run/main_scene="res://assets/ui/boot.tscn"
 [autoload]
 
 ; Global signal bus — registered first so all other singletons/scenes can rely
-; on it existing. Order per IMPLEMENTATION_PLAN.md:
-;   Events -> GameState -> ObjectPool -> AudioManager -> SceneManager
+; on it existing. (The IMPLEMENTATION_PLAN ObjectPool autoload was dropped — issue
+; #5 closed as superseded: the fleet/enemies are MultiMesh-batched, not node-pooled.)
 Events="*res://autoload/events.gd"
 ; Colour design tokens (HDR + HUD). No deps (pure consts) — early so every entity's
 ; visual code can reference Palette.* at runtime.
