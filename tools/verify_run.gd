@@ -40,6 +40,10 @@ func _initialize() -> void:
 	if gs == null:
 		lines.append("RESULT=FAIL (GameState autoload missing)")
 		_write(lines); return
+	# Under `-s`, autoload _ready is deferred past _initialize, so do the engine's
+	# normal wiring explicitly: connect GameState to the gate bus (gate effects are
+	# applied by GameState, not the spawner — review-debt decoupling).
+	gs.call("wire_events")
 
 	# 4) GameState economy: start_run seeds the swarm; clamp never goes negative.
 	gs.call("start_run")

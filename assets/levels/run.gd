@@ -60,6 +60,9 @@ func _ready() -> void:
 	_targets.name = "Targets"
 	add_child(_targets)
 	_targets.set_fleet(_fleet)
+	# Enemies that reach the ship line breach + drain the Glow Battery (#53/#55) —
+	# the loss pressure that makes shooting the swarm matter.
+	_targets.set_breach_line(ship_pos.y)
 
 	# Split Choice gate formations — scroll down the track; the one the ship steers
 	# through mutates the swarm volume (fleet fire reacts via Events).
@@ -91,9 +94,10 @@ func _process(delta: float) -> void:
 	# finish line / win). Run drives the frame; GameState owns the state.
 	GameState.tick_run(delta)
 	if _hud:
-		_hud.text = "FPS %d   swarm %d\nscore %d   kills %d\ndist %dm  %d%%" % [
+		_hud.text = "FPS %d   swarm %d\nscore %d   kills %d\ncombo %d  ×%.1f\ndist %dm  %d%%" % [
 			Engine.get_frames_per_second(), GameState.projectile_count,
 			GameState.score, (_targets.kills if _targets else 0),
+			GameState.combo, GameState.combo_multiplier,
 			int(_distance), int(_progress * 100.0)]
 
 

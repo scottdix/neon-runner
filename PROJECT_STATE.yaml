@@ -4,8 +4,27 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-22"
-  session: 8
+  session: 9
   notes: >
+    Session 9 (autonomous overnight). COMBAT-DEPTH SLICE for v0.2.0 — all headless-validated
+    (verify_run + new verify_combat + new verify_scene all PASS) + code-reviewed (high). (1)
+    REVIEW DEBT #1-#3 PAID: gate economy decoupled — GateSpawner no longer mutates GameState;
+    a gate emits gate_passed, GameState._on_gate_passed commits the new swarm volume + drains the
+    battery on a negative gate; gate.trigger() floors the emitted count. GameState wires the bus
+    in _ready->wire_events() (idempotent; verify scripts call it since autoload _ready is deferred
+    under headless -s). (2) #53 ARCHETYPES: targets.gd rewritten — Glitch (fast low-HP swarm),
+    Looming Rhombus (armored: only takes hits ABOVE armor), Fractal (splits into 2 fractlings when
+    killed below the firepower/volume tier; dies clean above), Fractling. STATS/COLORS per kind.
+    (3) #54 BATCHED COLLISION (D3): Fleet.consume_volumes resolves all enemy volumes vs bullets in
+    ONE pass + x-band cull; consume_near now delegates to it (one impl). (4) #14 SCALE: headless
+    assertion holds bullets bounded (peak ~131) at 48 enemies + 2000 swarm. (5) COMBAT LOOP CLOSED:
+    enemies breaching the ship line drain the Glow Battery (Events.enemy_breached). (6) COMBO: kills
+    route through GameState.register_kill -> ramps a multiplier (wires dormant combo_updated/
+    multiplier_changed), decays via _tick_combo; HUD shows combo xN. (7) REVIEW FIX: a battery-
+    failing breach mid-step could phantom-count a later 0-HP enemy as a kill; fixed with a per-
+    iteration run_active guard + a deterministic regression test. New Events: enemy_breached,
+    enemy_split. NOT device-validated (glow/FPS need a phone — #54 acceptance #2 still open).
+  previous_notes: >
     Session 8. COMPLETED THE v0.2.0 CORE LOOP (#51 + #11/#56 + #55), all headless-validated
     (tools/verify_run.gd) + device-validated on TestFlight build #10. (1) #51 finite level:
     LevelDef resource + level_01.tres (320m @ 8m/s), GameState distance/tick_run/complete_run,
@@ -19,20 +38,8 @@ last_updated:
     Apple ingestion (re-shipped identical as #10 -> VALID); #10 submitted for EXTERNAL beta review.
     (5) TestFlight mgmt: new Fastfile lanes (status/testers/add_tester/beta_diag/beta_submit),
     created external group "Friends & Family" + tester phresko@gmail.com. (6) Code review (9
-    findings, none blocking) + security review (clean). REVIEW DEBT: gate effect applied by the
-    spawner reaching into GameState, not GameState reacting to gate_passed (CLAUDE.md decoupling);
-    gate_passed emits a pre-clamp new_count. Fold into #13/#53 so they don't duplicate the dance.
-  previous_notes: >
-    Session 7. (1) TESTFLIGHT INSTALLABLE: build #1 was packaged iPad-only (Godot
-    targeted_device_family=1 == iPad in its enum) -> "incompatible" on the iPhone 12 Pro.
-    Fixed to 2 (iPhone & iPad, UIDeviceFamily [1,2]); created internal TestFlight group +
-    tester (scottdix@gmail.com, no dot) via ASC API. (2) #6 POC DEVICE-VALIDATED: glow blooms,
-    FPS 59-60 on the iPhone 12 Pro. (3) BUILT THE MVP GAMEPLAY SLICE (#9/#10/#52, partial #14):
-    new GameState autoload (#2), Events-bus extensions, new Run main scene = analog slide-steer +
-    always-on MultiMesh fire stream + shootable exploding targets + HUD. (4) Iterated game-feel
-    over builds 2->7 to a CONNECTED hit loop: glow render-path fix (MultiMesh/additive HDR, NOT
-    draw_* which never blooms), PER-IMPACT DAMAGE + death bursts. (5) Gotchas: ship-over-SSH needs
-    keychain unlock + set-key-partition-list; main scene can't use bare class_name -> preload().
+    findings, none blocking) + security review (clean). REVIEW DEBT (now PAID in session 9): gate
+    effect applied by the spawner reaching into GameState; gate_passed emitted a pre-clamp count.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
@@ -40,21 +47,24 @@ last_updated:
 focus:
   active_milestone: "v0.2.0 - Playable Prototype"
   active_epic: "#53 — Entropy enemy faction (enemies + collision)"
-  current_issue: "#53 enemy faction (real enemy types/behaviours) + #14 collision hardening as bullet counts scale"
-  next_issue: "#13 segment-driven spawner (place gate/enemy formations by world-x along the track) + #54 batched projectile→enemy collision/damage layer (D3)"
+  current_issue: "#13 segment-driven spawner — stream gate AND enemy formations by track_m from LevelDef (replace the hardcoded GateSpawner list + Targets endless-respawn)"
+  next_issue: "#53 cross-cutting enemy behaviours (gate-hijack: enemy parks in a gate, must be killed to claim it; multiply-through-positive-gate) + device perf pass for #54 (60fps dense fleet+swarm on iPhone)"
   notes: >
-    Session 8 DONE: v0.2.0 core loop COMPLETE + device-validated on TestFlight build #10 (#51
-    finish line, #11/#56 gates, #55 Glow Battery) — see SESSION-008. Main scene res://assets/levels/run.tscn.
-    NEXT (#53/#14): enemies are placeholder shootable diamonds in assets/obstacles/targets.gd — give
-    them real archetypes/behaviour; verify collision stays cheap as fire volume scales (live bullets
-    bounded ~140). FOLD IN the code-review fix while here: move the gate effect out of GateSpawner
-    (it calls GameState.set_projectile_count + drain_battery directly) into a GameState handler for
-    Events.gate_passed (CLAUDE.md decoupling), and clamp the gate_passed new_count. GateSpawner
-    formations are HARDCODED (MVP) — #13 makes the real segment-driven spawner that places them by
-    world-x; #54 is the batched D3 collision/damage layer (revisit the per-impact damage deviation).
-    OPS: build #10 awaiting external Beta App Review (Patrick auto-notified on approval); next ship
-    is build #11 (#9 is dead). New Fastfile lanes: status/testers/add_tester/beta_diag/beta_submit;
-    final external "Submit for Review" must be done in ASC web UI (fastlane beta_submit metadata-only).
+    Session 9 DONE (autonomous overnight): combat-depth slice — see SESSION-009. Gate economy
+    DECOUPLED (review debt #1-#3 paid), #53 archetypes (Glitch/Rhombus-armored/Fractal-splits/
+    Fractling) in assets/obstacles/targets.gd, #54 batched collision (Fleet.consume_volumes, one
+    pass + x-band cull; consume_near delegates to it), #14 scale assertion, breach->battery combat
+    loop, kill-combo multiplier in GameState. All headless-green: tools/verify_run + verify_combat +
+    verify_scene. Code-reviewed (high) + 1 bug fixed (phantom kill after a battery-failing breach ->
+    per-iteration run_active guard in targets.step). Main scene res://assets/levels/run.tscn.
+    NEXT (#13): spawning is still ad-hoc — GateSpawner.build_formations() is a HARDCODED list and
+    Targets respawns endlessly. Make a LevelDef-driven schedule that streams gate + enemy formations
+    by track_m on the shared TrackView projection and recycles past the player — one director,
+    replacing both. THEN (#53): gate-hijack + multiply-through-gate enemy behaviours. NOT YET ON
+    DEVICE: glow/FPS need a phone (Intel UHD 630 can't render bloom here) — #54 acceptance #2 (60fps
+    on a real phone) is still OPEN; next ship is TestFlight build #11. MVP balance is rough (battery
+    drain, combo window 2.5s, armor/split tiers are first guesses) — tune after a device playtest.
+    OPS: build #10 still awaiting external Beta App Review; final "Submit for Review" is ASC web UI.
     Still open: remove Xcode-16.4.0.app (safe to drop — device tests passed).
 
 # =============================================================================

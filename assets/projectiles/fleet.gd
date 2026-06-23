@@ -100,20 +100,44 @@ func set_volume(count: int) -> void:
 	_volume = maxi(0, count)
 
 
-## Consume (remove + spark) projectiles within `radius` of a world point and
-## return how many were hit. Targets calls this so each absorbed bullet IS the
-## damage — impact and damage become the same event (connected hit feel). Bounded
-## bullet count (fire-rate capped) keeps this O(enemies × ~live) cheap, not the
-## "thousands of bullet bodies" D3 warns against.
+## Consume (remove + spark) projectiles within `radius` of a single world point and
+## return how many were hit. Thin wrapper over the batched consume_volumes() (one
+## volume) so there is ONE collision implementation to maintain. Each absorbed bullet
+## IS the damage — impact and damage are the same event (connected hit feel).
 func consume_near(world_pos: Vector2, radius: float) -> int:
-	var r2 := radius * radius
-	var hits := 0
+	return consume_volumes(PackedVector2Array([world_pos]), PackedFloat32Array([radius]))[0]
+
+
+## Batched collision (#54/#14): resolve MANY enemy "damage volumes" against the live
+## bullets in a SINGLE pass, instead of one consume_near() call (and one survivor-array
+## rebuild) per enemy. `positions[i]`/`radii[i]` describe enemy i's hit volume; returns
+## a PackedInt32Array of bullets absorbed by each, aligned to the input. Each bullet is
+## consumed by at most one volume (first match, nearest-first not needed — enemies rarely
+## overlap). An x-band cull (|dx| > radius → skip) keeps this near O(bullets) when enemies
+## are spread out, holding D3's perf intent without per-bullet Area2D bodies. The compiled
+## beam-emitter path (PerfBullets) remains the escape hatch if GDScript ever caps out.
+func consume_volumes(positions: PackedVector2Array, radii: PackedFloat32Array) -> PackedInt32Array:
+	var n: int = positions.size()
+	var hits := PackedInt32Array()
+	hits.resize(n)
+	if n == 0:
+		return hits
+	var r2: PackedFloat32Array = PackedFloat32Array()
+	r2.resize(n)
+	for i in n:
+		r2[i] = radii[i] * radii[i]
 	var survivors: Array[Vector2] = []
 	for p in _proj:
-		if p.distance_squared_to(world_pos) < r2:
-			_sparks.append({"pos": p, "life": SPARK_LIFE})
-			hits += 1
-		else:
+		var absorbed := false
+		for i in n:
+			if absf(p.x - positions[i].x) > radii[i]:
+				continue                                    # x-band cull (cheap reject)
+			if p.distance_squared_to(positions[i]) < r2[i]:
+				hits[i] += 1
+				_sparks.append({"pos": p, "life": SPARK_LIFE})
+				absorbed = true
+				break
+		if not absorbed:
 			survivors.append(p)
 	_proj = survivors
 	return hits

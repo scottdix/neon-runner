@@ -27,8 +27,18 @@ signal fleet_fired(shots: int)
 # --- Targets / enemies -------------------------------------------------------
 ## A shootable target was destroyed by the fleet — hook for score/particles/audio.
 signal enemy_destroyed(at: Vector2, points: int)
+## An enemy reached the ship line without being destroyed — it breaches and drains
+## the Glow Battery (#53/#55 combat loop). Hook for screen-shake / red-flash / audio.
+signal enemy_breached(at: Vector2, damage: float)
+## A Fractal enemy was hit with insufficient firepower and split into fractlings
+## (#53/#54 tier behaviour) instead of dying — hook for a split vfx/audio sting.
+signal enemy_split(at: Vector2)
 
 # --- Gate events -------------------------------------------------------------
+## A gate fired (#11/#56). CONSUMED BY GameState, which applies the economy effect
+## (set the new swarm volume, drain the battery on a negative gate) — the spawner no
+## longer reaches into GameState directly (CLAUDE.md decoupling). `new_count` is the
+## gate's post-op count, already floored at 0; HUD/audio may also listen.
 signal gate_passed(gate_type: String, value: float, new_count: int)
 signal gate_spawned(gate: Node2D)
 

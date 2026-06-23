@@ -12,8 +12,9 @@ extends Node2D
 ##
 ## `update(distance, ship_x)` is pure logic (positions + crossing trigger) so it
 ## runs/asserts headless; _process just feeds it GameState.distance + the latest
-## steer x. Triggering mutates GameState.projectile_count -> the fleet's fire volume
-## reacts via Events (projectile_count_changed); the gate also emits gate_passed.
+## steer x. Triggering only calls gate.trigger(): the gate emits gate_passed and
+## GameState applies the economy effect (swarm volume + battery). The spawner holds
+## no GameState mutation — fully decoupled via the Events bus.
 
 const GATE := preload("res://assets/gates/gate.gd")
 const TRACK := preload("res://assets/levels/track.gd")
@@ -77,9 +78,8 @@ func update(distance: float, ship_x: float) -> void:
 		if not f["triggered"] and y >= _trigger_y:
 			f["triggered"] = true
 			var chosen: Node2D = f["left"] if f["left"].contains_x(ship_x) else f["right"]
-			GameState.set_projectile_count(chosen.trigger(GameState.projectile_count))
-			# Negative (−/÷) gates also cost Glow Battery (#55) — the risk side of
-			# the choice. Positive gates only grow the swarm.
-			if not chosen.is_positive():
-				GameState.drain_battery(GameState.DRAIN_PER_NEGATIVE_GATE)
+			# Fire the chosen gate. It emits gate_passed; GameState applies the effect
+			# (new swarm volume + battery drain on a negative gate). The spawner no
+			# longer mutates GameState directly — decoupling (CLAUDE.md / review debt).
+			chosen.trigger(GameState.projectile_count)
 			triggers += 1

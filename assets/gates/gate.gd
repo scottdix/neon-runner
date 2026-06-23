@@ -77,13 +77,15 @@ func get_display_text() -> String:
 	return "?"
 
 
-## Fire this gate once: mark it, announce on the bus (HUD/audio/#55 battery react),
-## and return the new volume for GameState to commit. Re-triggering is a no-op.
+## Fire this gate once: mark it, announce on the bus (GameState applies the economy
+## effect; HUD/audio/#55 battery also react), and return the new volume. The emitted
+## count is floored at 0 here so the signal payload is honest (review debt: was
+## pre-clamp). Re-triggering is a no-op.
 func trigger(count: int) -> int:
 	if has_been_triggered:
 		return count
 	has_been_triggered = true
-	var new_count := apply(count)
+	var new_count := maxi(0, apply(count))
 	Events.gate_passed.emit(_op_string(), value, new_count)
 	if _panel != null:
 		_panel.modulate = FLASH

@@ -43,6 +43,43 @@ var glow_battery: float = MAX_GLOW_BATTERY
 ## visibly firing from frame one.
 const START_PROJECTILES := 20
 
+## Kill-combo scoring. Consecutive kills within COMBO_WINDOW seconds raise a score
+## multiplier; a lull resets it to 1×. Wires the previously-dormant combo/multiplier
+## signals. The multiplier scales every kill's points (Targets routes kills through
+## `register_kill`, not `add_score`, so this is the one place scoring is computed).
+const COMBO_WINDOW := 2.5
+const COMBO_STEP := 0.1
+const MAX_COMBO_MULT := 5.0
+var combo: int = 0
+var combo_multiplier: float = 1.0
+var _combo_timer: float = 0.0
+
+
+func _ready() -> void:
+	wire_events()
+
+
+## Connect GameState to the gate bus. Gate effects are applied HERE, not by the
+## spawner (CLAUDE.md "Decoupling via the Events bus"): a gate emits gate_passed;
+## GameState reacts and mutates the economy. This is the single owner of run-state
+## mutation (review debt #1–#3). Public + idempotent because under the headless `-s`
+## loop autoload _ready is deferred past _initialize, so the verify scripts call this
+## explicitly in setup (doing the engine's normal _ready wiring). Events is the first
+## autoload, so it's always present by the time this runs.
+func wire_events() -> void:
+	if not Events.gate_passed.is_connected(_on_gate_passed):
+		Events.gate_passed.connect(_on_gate_passed)
+
+
+## React to a gate firing (#11/#56). The gate's emitted `new_count` is already its
+## post-op value floored at 0; we commit it (set_projectile_count re-clamps for
+## safety) and, for a negative gate (−/÷), drain the Glow Battery — the risk side of
+## the Split Choice. The spawner used to do this inline; now it only calls trigger().
+func _on_gate_passed(gate_type: String, _value: float, new_count: int) -> void:
+	set_projectile_count(new_count)
+	if gate_type == "subtract" or gate_type == "divide":
+		drain_battery(DRAIN_PER_NEGATIVE_GATE)
+
 
 func start_run() -> void:
 	active_level = _load_level()
@@ -51,10 +88,15 @@ func start_run() -> void:
 	score = 0
 	distance = 0.0
 	glow_battery = MAX_GLOW_BATTERY
+	combo = 0
+	combo_multiplier = 1.0
+	_combo_timer = 0.0
 	set_projectile_count(START_PROJECTILES)
 	Events.score_changed.emit(score)
 	Events.distance_changed.emit(distance, 0.0)
 	Events.glow_battery_changed.emit(glow_battery, MAX_GLOW_BATTERY)
+	Events.combo_updated.emit(combo)
+	Events.multiplier_changed.emit(combo_multiplier)
 	Events.game_started.emit()
 
 
@@ -84,6 +126,7 @@ func fail_run() -> void:
 func tick_run(delta: float) -> void:
 	if not run_active or active_level == null:
 		return
+	_tick_combo(delta)
 	distance += active_level.scroll_speed_mps * delta
 	var progress: float = clampf(distance / active_level.length_m, 0.0, 1.0)
 	Events.distance_changed.emit(distance, progress)
@@ -121,6 +164,37 @@ func _load_level() -> Resource:
 func add_score(amount: int) -> void:
 	score += amount
 	Events.score_changed.emit(score)
+
+
+## Score a kill through the combo system — Targets calls this instead of add_score so
+## the multiplier is applied in one place. Each consecutive kill (within COMBO_WINDOW)
+## bumps the combo and its multiplier; returns the points actually awarded. The first
+## kill of a chain is 1.0× (combo - 1), so combos reward sustained fire, not one shot.
+func register_kill(base_points: int) -> int:
+	if not run_active:
+		return 0
+	combo += 1
+	_combo_timer = COMBO_WINDOW
+	combo_multiplier = clampf(1.0 + COMBO_STEP * float(combo - 1), 1.0, MAX_COMBO_MULT)
+	var pts: int = int(round(float(base_points) * combo_multiplier))
+	score += pts
+	Events.score_changed.emit(score)
+	Events.combo_updated.emit(combo)
+	Events.multiplier_changed.emit(combo_multiplier)
+	return pts
+
+
+## Decay the kill combo: once COMBO_WINDOW elapses with no new kill, the chain breaks
+## back to 1×. Driven by tick_run so it only runs during an active run.
+func _tick_combo(delta: float) -> void:
+	if _combo_timer <= 0.0:
+		return
+	_combo_timer -= delta
+	if _combo_timer <= 0.0 and combo > 0:
+		combo = 0
+		combo_multiplier = 1.0
+		Events.combo_updated.emit(0)
+		Events.multiplier_changed.emit(1.0)
 
 
 ## Set the swarm volume (clamped to >= 0) and announce it. Gates call this with
