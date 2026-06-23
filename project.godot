@@ -24,8 +24,18 @@ run/main_scene="res://assets/levels/run.tscn"
 ; on it existing. Order per IMPLEMENTATION_PLAN.md:
 ;   Events -> GameState -> ObjectPool -> AudioManager -> SceneManager
 Events="*res://autoload/events.gd"
-; Run state + economy (projectile_count/score/finish). Depends on Events -> second.
+; Colour design tokens (HDR + HUD). No deps (pure consts) — early so every entity's
+; visual code can reference Palette.* at runtime.
+Palette="*res://autoload/palette.gd"
+; Typography design tokens (the 4 bundled fonts + a default Theme). No deps; loads
+; defensively so a pre-import headless run just falls back to the engine font.
+Fonts="*res://autoload/fonts.gd"
+; Persisted player options (haptics + AMOLED). Depends on Events (emits on change).
+Settings="*res://autoload/settings.gd"
+; Run state + economy (projectile_count/score/finish). Depends on Events.
 GameState="*res://autoload/game_state.gd"
+; Tactile feedback tiers. Depends on Events (listens) + Settings (master switch) -> last.
+Haptics="*res://autoload/haptics.gd"
 
 [display]
 

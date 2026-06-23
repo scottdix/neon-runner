@@ -33,6 +33,11 @@ var _design := Vector2(1080, 1920)
 var triggers: int = 0               # gates fired so far (debug/verify)
 var recycled: int = 0               # formations freed after passing the player (debug/verify)
 
+## Gate-hijack (#53). Every gate gets a stable id (for the occupant + multiply-through
+## band identity); hijacked gates queue here until Targets parks an occupant on them.
+var _next_gate_id: int = 0
+var _pending_hijacks: Array = []    # [{id, x}, ...] gates awaiting a parked enemy
+
 
 ## Run calls this with the ship's canvas y before adding us to the tree.
 func setup(trigger_y: float) -> void:
@@ -61,12 +66,64 @@ func build_formations(specs: Array) -> void:
 		var left: Node2D = GATE.new()
 		left.name = "GateL_%d" % int(s["m"])
 		left.configure(GATE.op_from_string(l[0]), float(l[1]), 0.0, LANE_SPLIT, LEFT_CENTER)
+		left.hijack_id = _next_gate_id
+		_next_gate_id += 1
 		var right: Node2D = GATE.new()
 		right.name = "GateR_%d" % int(s["m"])
 		right.configure(GATE.op_from_string(r[0]), float(r[1]), LANE_SPLIT, 1080.0, RIGHT_CENTER)
+		right.hijack_id = _next_gate_id
+		_next_gate_id += 1
+		# Optional gate-hijack (#53): "hijack": "l"|"r" parks an Entropy occupant on that
+		# gate; its splice is denied until the occupant is destroyed. Targets pulls the
+		# pending list (take_pending_hijacks) and spawns the enemy bound to the gate id.
+		match String(s.get("hijack", "")):
+			"l":
+				left.hijacked = true
+				_pending_hijacks.append({"id": left.hijack_id, "x": LEFT_CENTER})
+			"r":
+				right.hijacked = true
+				_pending_hijacks.append({"id": right.hijack_id, "x": RIGHT_CENTER})
 		add_child(left)
 		add_child(right)
 		_formations.append({"track_m": s["m"], "left": left, "right": right, "triggered": false})
+
+
+## Newly-built hijacked gates still needing a parked occupant; returned ONCE then
+## cleared (Targets pulls these each step and spawns one enemy per id).
+func take_pending_hijacks() -> Array:
+	var out: Array = _pending_hijacks
+	_pending_hijacks = []
+	return out
+
+
+## Live POSITIVE gate bands for the multiply-through interaction (#53): each
+## {id, x_min, x_max, y} in canvas space. Cheap snapshot — only a handful are ever live.
+func positive_gate_bands() -> Array:
+	var bands: Array = []
+	for f in _formations:
+		for g in [f["left"], f["right"]]:
+			if g.is_positive():
+				bands.append({"id": g.hijack_id, "x_min": g.span_min, "x_max": g.span_max, "y": g.position.y})
+	return bands
+
+
+## Current state of gate `id` so a parked occupant can ride it: {alive, pos}. `alive` is
+## false once the gate recycled, so Targets drops the orphaned occupant.
+func gate_info(id: int) -> Dictionary:
+	for f in _formations:
+		for g in [f["left"], f["right"]]:
+			if int(g.hijack_id) == id:
+				return {"alive": true, "pos": g.position}
+	return {"alive": false, "pos": Vector2.ZERO}
+
+
+## Targets reports gate `id`'s occupant was destroyed → its splice is now claimable.
+func notify_hijack_cleared(id: int) -> void:
+	for f in _formations:
+		for g in [f["left"], f["right"]]:
+			if int(g.hijack_id) == id:
+				g.hijack_cleared = true
+				return
 
 
 ## Scroll every formation to its current y, fire any that just crossed the line, and

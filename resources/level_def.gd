@@ -31,12 +31,14 @@ extends Resource
 ## segment list; data-driven director v0.5.0"). A per-level .tres can override these
 ## later — until then level_01.tres just uses these defaults.
 
-## Split Choice gate formations: `{"m": metres, "l": [op, value], "r": [op, value]}`.
-## `op` is "add" | "sub" | "mul" | "div"; the ship's x at the crossing picks l vs r.
+## Split Choice gate formations: `{"m": metres, "l": [op, value], "r": [op, value],
+## "hijack"?: "l"|"r"}`. `op` is "add" | "sub" | "mul" | "div"; the ship's x at the
+## crossing picks l vs r. `hijack` parks an Entropy occupant on that gate (#53) — its
+## splice is DENIED unless the occupant is destroyed before the gate reaches the line.
 @export var gate_formations: Array = [
 	{"m": 45.0,  "l": ["mul", 2.0],  "r": ["add", 8.0]},   # ×2 vs +8 (count-dependent)
 	{"m": 90.0,  "l": ["add", 15.0], "r": ["sub", 5.0]},   # grow vs trap
-	{"m": 135.0, "l": ["mul", 3.0],  "r": ["div", 2.0]},   # triple vs halve
+	{"m": 135.0, "l": ["mul", 3.0],  "r": ["div", 2.0], "hijack": "l"},  # the ×3 is hijacked — clear it to claim
 	{"m": 180.0, "l": ["div", 2.0],  "r": ["mul", 2.0]},   # mirror — trap on the left
 	{"m": 225.0, "l": ["add", 25.0], "r": ["mul", 3.0]},
 	{"m": 270.0, "l": ["sub", 10.0], "r": ["add", 30.0]},

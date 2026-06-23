@@ -25,19 +25,24 @@ static func op_from_string(s: String) -> int:
 	return Operation.ADD
 
 const BOX := Vector2(440.0, 150.0)          # visible panel size
-const FLASH := Color(6.0, 5.5, 6.0, 1.0)    # white-hot pulse on trigger
 
-# HDR polarity colours (RGB > 1 feeds the bloom). DESIGN_SPEC: ×=magenta, +=green,
-# negative=red.
-const COL_MULTIPLY := Color(3.0, 0.35, 2.6, 1.0)
-const COL_ADD := Color(0.5, 3.2, 1.7, 1.0)
-const COL_NEGATIVE := Color(3.2, 0.55, 0.5, 1.0)
+# HDR polarity colours now live in Palette (×=magenta, +=acid green, negative=red);
+# referenced at runtime in _polarity_color() / trigger().
 
 var operation: int = Operation.MULTIPLY
 var value: float = 2.0
 var span_min: float = 0.0                   # horizontal trigger span (canvas x)
 var span_max: float = 540.0
 var has_been_triggered: bool = false
+
+## Gate-hijack (#53). When `hijacked`, an Entropy enemy is parked on this gate and the
+## splice is DENIED until that occupant is destroyed (`hijack_cleared`). GateSpawner
+## assigns `hijack_id`; Targets parks/kills the occupant and reports back to the spawner,
+## which flips `hijack_cleared`. A bare `.new()` gate is never hijacked (defaults off),
+## so existing headless tests are unaffected.
+var hijacked: bool = false
+var hijack_cleared: bool = false
+var hijack_id: int = -1
 
 var _panel: Sprite2D
 var _label: Label
@@ -96,10 +101,17 @@ func trigger(count: int) -> int:
 	if has_been_triggered:
 		return count
 	has_been_triggered = true
+	# Gate-hijack (#53): a live occupant at the line DENIES the splice — no economy
+	# effect, just a "blocked" announcement (HUD/audio/haptic) and a red flash.
+	if hijacked and not hijack_cleared:
+		Events.gate_hijack_blocked.emit(_op_string(), global_position)
+		if _panel != null:
+			_panel.modulate = Palette.GATE_NEGATIVE
+		return count
 	var new_count := maxi(0, apply(count))
 	Events.gate_passed.emit(_op_string(), value, new_count)
 	if _panel != null:
-		_panel.modulate = FLASH
+		_panel.modulate = Palette.FLASH_WHITE
 	return new_count
 
 
@@ -114,9 +126,9 @@ func _op_string() -> String:
 
 func _polarity_color() -> Color:
 	match operation:
-		Operation.MULTIPLY: return COL_MULTIPLY
-		Operation.ADD: return COL_ADD
-	return COL_NEGATIVE
+		Operation.MULTIPLY: return Palette.GATE_MULTIPLY
+		Operation.ADD: return Palette.GATE_ADD
+	return Palette.GATE_NEGATIVE
 
 
 # --- Visuals -----------------------------------------------------------------
@@ -140,7 +152,8 @@ func _ready() -> void:
 	_label.size = BOX
 	_label.position = -BOX * 0.5            # center the label box on the gate
 	_label.add_theme_font_size_override("font_size", 84)
-	_label.modulate = Color(1, 1, 1)        # crisp white digits (out of bloom)
+	Fonts.apply(_label, Fonts.arcade)       # Press Start 2P arcade numerals
+	_label.modulate = Palette.HUD_WHITE     # crisp white digits (out of bloom)
 	add_child(_label)
 
 

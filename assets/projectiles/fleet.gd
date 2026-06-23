@@ -186,7 +186,7 @@ func _render() -> void:
 		var local := _proj[i] - position
 		mm.set_instance_transform_2d(i, Transform2D(0.0, local))
 		# Gold HDR (>1, luminance-rich) so it clears the bloom threshold (POC #6).
-		mm.set_instance_color(i, Color(3.4, 2.8, 0.9, 1.0))
+		mm.set_instance_color(i, Palette.SWARM_GOLD)
 	# Impact sparks: bigger white-hot flashes that pop then fade — the visual
 	# "this bullet hit something" that connects the stream to the kills.
 	for j in spark_n:
@@ -195,7 +195,7 @@ func _render() -> void:
 		var scale: float = 1.6 + (1.0 - life) * 1.6      # expands as it fades
 		var slocal: Vector2 = s["pos"] - position
 		mm.set_instance_transform_2d(n + j, Transform2D(Vector2(scale, 0), Vector2(0, scale), slocal))
-		mm.set_instance_color(n + j, Color(5.5, 5.0, 3.2, 1.0) * life)
+		mm.set_instance_color(n + j, Palette.SWARM_SPARK * life)
 
 
 func _make_orb_texture() -> ImageTexture:

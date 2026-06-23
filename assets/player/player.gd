@@ -55,7 +55,7 @@ func _build_ship_visual() -> void:
 	mm.instance_count = 1
 	mm.set_instance_transform_2d(0, Transform2D())
 	# Luminance-rich cyan HDR; additive + soft mask makes the cores read white-hot.
-	mm.set_instance_color(0, Color(0.5, 3.8, 4.4, 1.0))
+	mm.set_instance_color(0, Palette.SHIP_CYAN)
 	var mmi := MultiMeshInstance2D.new()
 	mmi.name = "ShipMesh"
 	mmi.multimesh = mm

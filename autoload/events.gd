@@ -33,6 +33,9 @@ signal enemy_breached(at: Vector2, damage: float)
 ## A Fractal enemy was hit with insufficient firepower and split into fractlings
 ## (#53/#54 tier behaviour) instead of dying — hook for a split vfx/audio sting.
 signal enemy_split(at: Vector2)
+## A free enemy crossed a POSITIVE gate band and DUPLICATED (#53 cross-cutting:
+## "an enemy crossing a + gate multiplies"). Hook for a clone-pop vfx/audio.
+signal enemy_multiplied(at: Vector2)
 
 # --- Gate events -------------------------------------------------------------
 ## A gate fired (#11/#56). CONSUMED BY GameState, which applies the economy effect
@@ -41,6 +44,11 @@ signal enemy_split(at: Vector2)
 ## gate's post-op count, already floored at 0; HUD/audio may also listen.
 signal gate_passed(gate_type: String, value: float, new_count: int)
 signal gate_spawned(gate: Node2D)
+## A HIJACKED gate reached the ship line with its occupant still alive, so the splice
+## was DENIED (#53 cross-cutting: "enemy parks in a gate, must be killed to claim the
+## upgrade"). NOT a gate_passed — no economy effect applied. Hook for a denied sting /
+## red flash / heavier haptic.
+signal gate_hijack_blocked(gate_type: String, at: Vector2)
 
 # --- Glow Battery (health / loss) --------------------------------------------
 ## Health = the Glow Battery (#55, §4.6). Re-emitted by GameState whenever it
@@ -74,3 +82,9 @@ signal combo_updated(combo_count: int)
 signal spawn_particles(position: Vector2, type: String)
 signal trigger_screen_shake(intensity: float, duration: float)
 signal trigger_grid_ripple(position: Vector2, is_implosion: bool)
+
+# --- Settings / platform feel ------------------------------------------------
+## AMOLED / low-power display mode toggled (#NEW, DESIGN_SPEC "Platform feel"). The
+## Run environment swaps to a pitch-black clear + a dimmer bloom/grid path when on.
+## Re-emitted by Settings whenever the flag changes so live toggling works.
+signal amoled_mode_changed(enabled: bool)

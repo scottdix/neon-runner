@@ -18,20 +18,22 @@ const FLEET_SCRIPT := preload("res://assets/projectiles/fleet.gd")
 const TARGETS_SCRIPT := preload("res://assets/obstacles/targets.gd")
 const FINISH_LINE_SCRIPT := preload("res://assets/levels/finish_line.gd")
 const GATE_SPAWNER_SCRIPT := preload("res://assets/gates/gate_spawner.gd")
+const GRID_FLOOR_SCRIPT := preload("res://assets/levels/grid_floor.gd")
 
 var _player: Node2D
 var _fleet: Node2D
 var _targets: Node2D
 var _finish_line: Node2D
 var _gates: Node2D
+var _grid: Node2D
+var _env: Environment
 var _hud: Label
 var _battery_fill: ColorRect
 var _distance: float = 0.0
 var _progress: float = 0.0
 
 const BATTERY_BAR := Vector2(420.0, 34.0)
-const BATTERY_LOW := Color(1.0, 0.3, 0.3)      # empty (red)
-const BATTERY_HIGH := Color(0.35, 1.0, 0.6)    # full (green); kept <=1 (HUD, no bloom)
+# Battery / HUD colours live in Palette (BATTERY_LOW_HUD / BATTERY_HIGH_HUD, kept <=1).
 
 
 func _ready() -> void:
@@ -39,6 +41,14 @@ func _ready() -> void:
 		ProjectSettings.get_setting("display/window/size/viewport_width", 1080),
 		ProjectSettings.get_setting("display/window/size/viewport_height", 1920))
 	var ship_pos := Vector2(design.x * 0.5, design.y - SHIP_BOTTOM_MARGIN)
+
+	# Reactive vector grid floor — sits behind everything (its own CanvasLayer -1),
+	# scrolls with distance, warps under action. Built before the environment so the
+	# AMOLED/low-power pass can dim it, and before the entities so it reads as the
+	# ground they fly over.
+	_grid = GRID_FLOOR_SCRIPT.new()
+	_grid.name = "GridFloor"
+	add_child(_grid)
 
 	_build_environment()
 
@@ -70,6 +80,10 @@ func _ready() -> void:
 	_gates.name = "Gates"
 	_gates.setup(ship_pos.y)
 	add_child(_gates)
+	# #53 cross-cutting interactions: Targets queries the gate system for gate-hijack
+	# (park/clear occupants) + multiply-through (positive gate bands). One-way injection
+	# (Targets → Gates); the spawner never holds a Targets reference.
+	_targets.set_gates(_gates)
 
 	# Finite-level FINISH bar — scrolls in on the same projection as the gates and
 	# lands at the ship line at the win. Cosmetic; the win is GameState's logic.
@@ -83,6 +97,7 @@ func _ready() -> void:
 	Events.run_completed.connect(_on_run_completed)
 	Events.glow_battery_changed.connect(_on_battery_changed)
 	Events.grid_collapsed.connect(_on_grid_collapsed)
+	Events.amoled_mode_changed.connect(_on_amoled_mode_changed)
 
 	GameState.start_run()
 	# The level owns the segment schedule (#13): hand the gate formations + enemy waves
@@ -118,7 +133,7 @@ func _on_distance_changed(distance: float, progress: float) -> void:
 
 ## WIN — finish line crossed. Show the "RUN COMPLETE" Results and freeze the game.
 func _on_run_completed(final_score: int, distance: float) -> void:
-	_build_results_overlay("RUN COMPLETE", Color(0.7, 1.0, 0.85), final_score, distance, false)
+	_build_results_overlay("RUN COMPLETE", Palette.WIN_GREEN_HUD, final_score, distance, false)
 	get_tree().paused = true
 
 
@@ -126,7 +141,7 @@ func _on_run_completed(final_score: int, distance: float) -> void:
 ## we show the loss Results. Shares the win overlay path; the dark backdrop is the
 ## MVP stand-in for the reactive-grid collapse animation (that lands with the grid).
 func _on_grid_collapsed() -> void:
-	_build_results_overlay("GRID COLLAPSE", Color(1.0, 0.5, 0.45), GameState.score, _distance, true)
+	_build_results_overlay("GRID COLLAPSE", Palette.LOSS_RED_HUD, GameState.score, _distance, true)
 	get_tree().paused = true
 
 
@@ -135,7 +150,7 @@ func _on_battery_changed(value: float, max_value: float) -> void:
 		return
 	var frac: float = clampf(value / max_value, 0.0, 1.0)
 	_battery_fill.size.x = BATTERY_BAR.x * frac
-	_battery_fill.color = BATTERY_LOW.lerp(BATTERY_HIGH, frac)
+	_battery_fill.color = Palette.BATTERY_LOW_HUD.lerp(Palette.BATTERY_HIGH_HUD, frac)
 
 
 func _build_hud() -> void:
@@ -145,8 +160,9 @@ func _build_hud() -> void:
 	add_child(layer)
 	_hud = Label.new()
 	_hud.position = Vector2(36, 60)
-	_hud.modulate = Color(0.85, 0.95, 1.0)
-	_hud.add_theme_font_size_override("font_size", 44)
+	_hud.modulate = Palette.HUD_CYAN
+	_hud.add_theme_font_size_override("font_size", 40)
+	Fonts.apply(_hud, Fonts.mono)           # Share Tech Mono — legible multi-line debug readout
 	layer.add_child(_hud)
 
 	# Glow Battery bar (#55) — the health/loss readout. Dark track + colored fill.
@@ -155,13 +171,13 @@ func _build_hud() -> void:
 	track.name = "BatteryTrack"
 	track.position = bar_pos
 	track.size = BATTERY_BAR
-	track.color = Color(0.06, 0.08, 0.12)
+	track.color = Palette.BATTERY_TRACK_HUD
 	layer.add_child(track)
 	_battery_fill = ColorRect.new()
 	_battery_fill.name = "BatteryFill"
 	_battery_fill.position = bar_pos
 	_battery_fill.size = BATTERY_BAR
-	_battery_fill.color = BATTERY_HIGH
+	_battery_fill.color = Palette.BATTERY_HIGH_HUD
 	layer.add_child(_battery_fill)
 
 
@@ -183,6 +199,7 @@ func _build_results_overlay(title: String, color: Color, final_score: int, dista
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.modulate = color                          # kept <=1 (HUD path, no bloom)
 	label.add_theme_font_size_override("font_size", 96)
+	Fonts.apply(label, Fonts.display)               # Orbitron — the big results wordmark/score
 	label.anchors_preset = Control.PRESET_FULL_RECT
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	layer.add_child(label)
@@ -190,16 +207,32 @@ func _build_results_overlay(title: String, color: Color, final_score: int, dista
 
 func _build_environment() -> void:
 	# Same HDR bloom recipe proven on device in POC #6.
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.008, 0.012, 0.04)
-	env.glow_enabled = true
-	env.glow_intensity = 1.4
-	env.glow_strength = 1.0
-	env.glow_bloom = 0.15
-	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
-	env.glow_hdr_threshold = 1.0
+	_env = Environment.new()
+	_env.background_mode = Environment.BG_COLOR
+	_env.glow_enabled = true
+	_env.glow_strength = 1.0
+	_env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+	_env.glow_hdr_threshold = 1.0
+	_apply_display_mode(Settings.amoled_mode)        # clear colour + bloom intensity
 	var we := WorldEnvironment.new()
 	we.name = "WorldEnvironment"
-	we.environment = env
+	we.environment = _env
 	add_child(we)
+
+
+## Apply the AMOLED / low-power display mode to the environment (and the grid). AMOLED
+## clears to pitch #000000 so OLED pixels switch fully off, and runs a LOWER-cost bloom
+## (less intensity/bloom spread) per DESIGN_SPEC "Platform feel"; standard is the
+## near-black neon path. Live-swappable from the settings toggle.
+func _apply_display_mode(amoled: bool) -> void:
+	if _env == null:
+		return
+	_env.background_color = Palette.BG_AMOLED if amoled else Palette.BG_STANDARD
+	_env.glow_intensity = 1.0 if amoled else 1.4
+	_env.glow_bloom = 0.08 if amoled else 0.15
+	if _grid != null and _grid.has_method("set_low_power"):
+		_grid.set_low_power(amoled)
+
+
+func _on_amoled_mode_changed(enabled: bool) -> void:
+	_apply_display_mode(enabled)

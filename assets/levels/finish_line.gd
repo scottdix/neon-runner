@@ -14,8 +14,7 @@ const TRACK := preload("res://assets/levels/track.gd")
 
 const BAR_H := 64.0                 # bar thickness in px
 const CELL := 32                    # checker cell size in px
-## Success green (DESIGN_SPEC palette #2bff9e), pushed >1 on RGB to feed the bloom.
-const GREEN_HDR := Color(0.9, 4.0, 2.4, 1.0)
+# Success/finish colour is Palette.SUCCESS_GREEN (acid green #39ff14), set at runtime.
 
 var _design := Vector2(1080, 1920)
 var _track_m := 320.0               # finish sits at the end of the level
@@ -49,7 +48,7 @@ func _build_sprite() -> void:
 	_sprite = Sprite2D.new()
 	_sprite.name = "Bar"
 	_sprite.texture = _make_checker_texture()
-	_sprite.modulate = GREEN_HDR
+	_sprite.modulate = Palette.SUCCESS_GREEN
 	var mat := CanvasItemMaterial.new()
 	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 	_sprite.material = mat

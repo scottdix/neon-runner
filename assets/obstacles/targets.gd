@@ -48,6 +48,10 @@ const WAVE_STAGGER := 70.0          # vertical gap (px) between successive enemi
 const WAVE_EDGE_MARGIN := 160.0     # keep wave enemies this far from each screen edge
 const WAVE_DEFAULT_SPREAD := 220.0  # half-width (px) of a clustered wave when "x" is given
 
+## Multiply-through (#53): a free enemy duplicates when its y comes within this band of a
+## POSITIVE gate's y while inside the gate's x-span (≈ the gate panel's half-height).
+const MULTIPLY_BAND := 80.0
+
 ## Per-archetype stat block. Looked up by kind; enemies carry a copy so test code can
 ## still inject bare dicts (they default to GLITCH behaviour via the get() fallbacks).
 const STATS := {
@@ -57,17 +61,14 @@ const STATS := {
 	KIND_FRACTLING: {"hp": 28.0,  "size": 42.0,  "spd": [280.0, 380.0], "armor": 0, "points": 40,  "breach": 4.0,  "split": false},
 }
 
-## Per-archetype HDR colour (RGB > 1 feeds the bloom; textured/additive path so it glows).
-const COLORS := {
-	KIND_GLITCH:    Color(3.0, 0.6, 2.6, 1.0),    # magenta
-	KIND_RHOMBUS:   Color(3.4, 0.3, 1.2, 1.0),    # deep crimson-magenta (dense/dangerous)
-	KIND_FRACTAL:   Color(3.2, 2.2, 0.5, 1.0),    # amber star
-	KIND_FRACTLING: Color(3.0, 2.4, 0.9, 1.0),    # pale amber shard
-}
+# Per-archetype HDR colour now lives in Palette (Entropy faction = hot rose #ff007f).
+# Direction (session 12): one faction hue, varied by INTENSITY (not hue) so the four
+# archetypes read as one faction but stay tellable apart. See _enemy_color().
 
 var _design := Vector2(1080, 1920)
 var _fleet: Node2D                  # injected by Run; queried for bullet hits
 var _breach_line: float = 1.0e9     # disabled until Run injects the ship line (set_breach_line)
+var _gates: Node2D = null           # injected GateSpawner; queried for #53 interactions (null-safe)
 var _waves: Array = []              # [{m, kind, count, x?, spread?, spawned:bool}, ...] schedule
 var _enemies: Array[Dictionary] = []
 var _bursts: Array = []             # [{pos:Vector2, life:float, col:Color}, ...] death pops
@@ -101,6 +102,14 @@ func set_fleet(fleet: Node2D) -> void:
 ## Run injects the ship's y; left disabled (huge) for unit tests that don't want it.
 func set_breach_line(y: float) -> void:
 	_breach_line = y
+
+
+## The gate system, for the #53 cross-cutting interactions (gate-hijack +
+## multiply-through). One-way: Targets QUERIES the spawner (positive_gate_bands,
+## take_pending_hijacks, gate_info) and reports occupant deaths (notify_hijack_cleared).
+## The spawner never holds a reference back. Null-safe — unset in unit tests.
+func set_gates(gates: Node2D) -> void:
+	_gates = gates
 
 
 ## Install the level's enemy-wave schedule (#13). Each wave is duplicated and tagged
@@ -192,6 +201,10 @@ func _kind_from_string(s: String) -> int:
 func step(delta: float) -> void:
 	# (0) Scheduled spawns (#13). No-op without a schedule or while the run is inactive.
 	_spawn_due_waves()
+	# (0b) Park occupants on any newly-hijacked gates (#53). No-op without a gate system.
+	if _gates != null:
+		for h in _gates.call("take_pending_hijacks"):
+			_spawn_hijacker(h)
 
 	# (1) Batched projectile→enemy damage (#54). One pass over the bullets for ALL
 	# enemies instead of one survivor-rebuild per enemy.
@@ -207,15 +220,21 @@ func step(delta: float) -> void:
 				_apply_damage(_enemies[i], hits[i])
 
 	# (2) Movement + lifecycle. Rebuild the live set: survivors are kept, dead/breached/
-	# offscreen are dropped (finite — no respawn), Fractal splits push fractlings into
-	# to_add (added after the loop so we never mutate _enemies mid-iteration).
+	# offscreen are dropped (finite — no respawn), Fractal splits + multiply-through clones
+	# push into to_add (added after the loop so we never mutate _enemies mid-iteration).
+	var bands: Array = _gates.call("positive_gate_bands") if _gates != null else []
 	var survivors: Array[Dictionary] = []
 	var to_add: Array[Dictionary] = []
 	for e in _enemies:
+		e["flash"] = maxf(0.0, float(e["flash"]) - delta / FLASH_DECAY)
+		# Gate-hijack occupant (#53): rides its gate instead of self-moving; never
+		# breaches/leaves on its own. Resolved separately so the free-enemy logic stays clean.
+		if bool(e.get("parked", false)):
+			_step_parked(e, survivors)
+			continue
 		var p: Vector2 = e["pos"]
 		p.y += float(e["speed"]) * delta
 		e["pos"] = p
-		e["flash"] = maxf(0.0, float(e["flash"]) - delta / FLASH_DECAY)
 		# If the run has already ended this frame — e.g. an earlier enemy in THIS loop
 		# breached and emptied the battery, failing the run synchronously — stop
 		# scoring/breaching. Keep the enemy (frozen) so nothing is miscounted; the tree
@@ -235,6 +254,7 @@ func step(delta: float) -> void:
 		elif p.y > _design.y + float(e["size"]):
 			pass                                          # offscreen — dropped (no respawn)
 		else:
+			_maybe_multiply(e, bands, to_add)             # multiply-through a + gate (#53)
 			survivors.append(e)                           # alive, on-screen — keep
 	for ne in to_add:
 		if survivors.size() < MAX_ENEMIES:
@@ -286,6 +306,58 @@ func _fractling_at(pos: Vector2) -> Dictionary:
 	return f
 
 
+# --- #53 cross-cutting gate interactions -------------------------------------
+
+## Park an Entropy occupant on a freshly-hijacked gate (#53). A tough Rhombus so clearing
+## it before the gate reaches the line takes real firepower; it rides the gate each step.
+func _spawn_hijacker(h: Dictionary) -> void:
+	if _enemies.size() >= MAX_ENEMIES:
+		return
+	var e := _new_enemy(KIND_RHOMBUS, -200.0)
+	e["parked"] = true
+	e["gate_id"] = int(h["id"])
+	e["pos"] = Vector2(float(h["x"]), -200.0)   # snapped onto the gate next step (gate_info)
+	_enemies.append(e)
+
+
+## Advance a parked hijack occupant: it rides its gate (gate_info), is dropped if the gate
+## recycled, and on death frees the splice (notify_hijack_cleared) + scores like any kill.
+## Never breaches or leaves on its own. `survivors` is the live-set being rebuilt by step().
+func _step_parked(e: Dictionary, survivors: Array[Dictionary]) -> void:
+	if not GameState.run_active:
+		survivors.append(e)                          # freeze if the run ended this frame
+		return
+	var info: Dictionary = _gates.call("gate_info", int(e["gate_id"])) if _gates != null else {"alive": false}
+	if not bool(info.get("alive", false)):
+		return                                       # gate gone (recycled) — drop the orphan
+	e["pos"] = info["pos"]                            # ride the gate
+	if float(e["hp"]) <= 0.0:
+		if _gates != null:
+			_gates.call("notify_hijack_cleared", int(e["gate_id"]))  # splice now claimable
+		_kill(e)                                     # score/burst/emit, then dropped
+	else:
+		survivors.append(e)
+
+
+## Multiply-through (#53): a free enemy whose y enters a POSITIVE gate band (within its
+## x-span) DUPLICATES once — a fresh same-kind clone offset in x, itself flagged so it
+## won't re-multiply at the same band. Clones land in `to_add` (capped by step()).
+func _maybe_multiply(e: Dictionary, bands: Array, to_add: Array[Dictionary]) -> void:
+	if bands.is_empty() or bool(e.get("multiplied", false)):
+		return
+	var p: Vector2 = e["pos"]
+	for band in bands:
+		if p.x >= float(band["x_min"]) and p.x < float(band["x_max"]) \
+				and absf(p.y - float(band["y"])) < MULTIPLY_BAND:
+			e["multiplied"] = true
+			var clone := _new_enemy(int(e["kind"]), p.y)
+			clone["pos"] = p + Vector2(64.0, 0.0)
+			clone["multiplied"] = true               # the copy is already "through" — no chain
+			to_add.append(clone)
+			Events.enemy_multiplied.emit(p)
+			return
+
+
 ## An enemy died to the fleet: score it (combo), pop a burst, announce. The caller drops
 ## it from the live set (finite — no respawn).
 func _kill(e: Dictionary) -> void:
@@ -295,6 +367,7 @@ func _kill(e: Dictionary) -> void:
 	if _bursts.size() < MAX_BURSTS:
 		_bursts.append({"pos": e["pos"], "life": BURST_LIFE, "col": _enemy_color(e)})
 	Events.enemy_destroyed.emit(e["pos"], points)
+	Events.trigger_grid_ripple.emit(e["pos"], false)   # the reactive grid warps under the kill
 
 
 ## An enemy reached the ship line: it breaches, draining the Glow Battery by its breach
@@ -304,6 +377,7 @@ func _breach(e: Dictionary) -> void:
 	var dmg: float = float(e.get("breach", 6.0))
 	GameState.drain_battery(dmg)
 	Events.enemy_breached.emit(e["pos"], dmg)
+	Events.trigger_grid_ripple.emit(e["pos"], true)    # heavier inward pulse on a breach
 
 
 func _pick_kind() -> int:
@@ -326,13 +400,21 @@ func _new_enemy(kind: int, start_y: float) -> Dictionary:
 		"armor": int(s["armor"]), "points": int(s["points"]),
 		"breach": float(s["breach"]), "split": bool(s["split"]),
 		"flash": 0.0,
+		# #53 interaction state (defaults = an ordinary free enemy):
+		"parked": false,        # true = a gate-hijack occupant riding its gate
+		"gate_id": -1,          # the hijacked gate it rides (parked only)
+		"multiplied": false,    # already duplicated through a + gate (multiply-through, once)
 	}
 
 
 # --- Rendering ---------------------------------------------------------------
 
 func _enemy_color(e: Dictionary) -> Color:
-	return COLORS.get(int(e.get("kind", KIND_GLITCH)), COLORS[KIND_GLITCH])
+	match int(e.get("kind", KIND_GLITCH)):
+		KIND_RHOMBUS: return Palette.ENEMY_RHOMBUS
+		KIND_FRACTAL: return Palette.ENEMY_FRACTAL
+		KIND_FRACTLING: return Palette.ENEMY_FRACTLING
+	return Palette.ENEMY_GLITCH
 
 
 func _build_multimesh() -> void:
@@ -371,7 +453,7 @@ func _render() -> void:
 		var col: Color = _enemy_color(e)
 		var fl: float = float(e["flash"])
 		if fl > 0.0:
-			col = col.lerp(Color(6.0, 5.5, 6.0, 1.0), fl * 0.8)  # per-impact pulse
+			col = col.lerp(Palette.FLASH_WHITE, fl * 0.8)  # per-impact pulse
 		mm.set_instance_color(i, col)
 	# Death bursts: a white-hot diamond (tinted by the kind) that expands and fades.
 	for j in b_n:
@@ -380,7 +462,7 @@ func _render() -> void:
 		var bs: float = 0.9 + (1.0 - life) * 2.6   # expands outward as it fades
 		var blocal: Vector2 = burst["pos"] - position
 		mm.set_instance_transform_2d(n + j, Transform2D(Vector2(bs, 0), Vector2(0, bs), blocal))
-		var bcol: Color = burst.get("col", Color(6.0, 4.6, 6.0, 1.0))
+		var bcol: Color = burst.get("col", Palette.FLASH_WHITE)
 		mm.set_instance_color(n + j, (bcol + Color(3.0, 3.0, 3.0, 0.0)) * life)
 
 

@@ -73,8 +73,10 @@ Entropy (hot):** the ship + swarm read cool/gold; the enemy faction reads hot ro
 | **Rajdhani** | 500 / 600 / 700 | Default UI sans: subtitles, stat labels |
 | **Share Tech Mono** | — | Mono captions, taglines, screen-flow labels |
 
-> Action: download these `.ttf`s into `assets/fonts/` and register a Godot `Theme` —
-> mobile builds must ship fonts, not link Google Fonts.
+> DONE (session 12): the `.ttf`s are bundled in `assets/fonts/` (OFL, fetched from
+> google/fonts) and registered via the `Fonts` autoload (named roles + a default Theme);
+> mobile builds ship them. Rajdhani uses the Medium + Bold static weights; Orbitron is the
+> variable font (per-weight tuning, e.g. 900 for the wordmark, is a later polish pass).
 
 ## Entropy faction (enemies) — look + render strategy
 
@@ -176,14 +178,20 @@ positioning — the game should *feel* expensive):
 ## How this maps to existing GitHub issues
 - **NEW — Boot/loading screen:** no existing issue (menu/HUD/pause/game-over/settings
   = #41–#45 don't cover boot). → new issue.
-- **NEW — Typography + color theme (design tokens):** establish fonts + palette as a
-  Godot `Theme` + shared constants. Foundational; pull early. → new issue.
+- **Design tokens (colour + type) — LANDED (session 12):** colour is centralised in
+  `autoload/palette.gd` (HDR tokens for the bloom path + HUD tokens kept <=1) and every
+  entity references `Palette.*`. Typography is centralised in `autoload/fonts.gd` — the 4
+  Google fonts are bundled (OFL) in `assets/fonts/` and exposed as roles (arcade/display/
+  ui/ui_bold/mono) + a default Theme; gate digits, the HUD readout, and the Results
+  wordmark route through `Fonts.apply()`. Full design-token foundation complete.
+- **Reactive vector grid — LANDED (session 12):** `shaders/reactive_grid.gdshader` +
+  `assets/levels/grid_floor.gd` (scrolling HDR-blue grid, ambient + ripple warp, AMOLED
+  low-power dim). Device-unproven (glow/warp need a phone, #47/#54).
 - **NEW — No-ads one-time unlock (IAP):** product feature, no existing issue. → new issue
   (later milestone, but tracked).
-- **NEW — Haptics (light/medium/heavy tactile tiers):** no existing issue. → new issue,
-  v0.2.0 (see "Platform feel").
-- **NEW — AMOLED / low-power display mode:** settings toggle. → fold into the settings
-  issue (#45) or a new small issue.
+- **Haptics (light/medium/heavy) — #65** (foundation landed session 12; device tuning open).
+- **AMOLED / low-power display mode — #66** (foundation landed session 12; Settings-screen
+  UI + on-device power/look check open). Settings toggle UI belongs with #45.
 - #41 Main menu ← screen 02 spec above.
 - #42 In-game HUD ← screen 03 HUD spec (score/combo/finish + control hints).
 - #44 Game over screen ← **rework as the RESULTS screen** (screen 04 stats + RETRY/MENU).
