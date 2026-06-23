@@ -17,7 +17,8 @@ extends SceneTree
 
 const RESULT_PATH := "/tmp/verify_scene_result.txt"
 const SCENE := "res://assets/levels/run.tscn"
-const RUN_FRAMES := 180            # ~3 s at 60 fps
+const RUN_FRAMES := 420            # long enough that distance passes the first enemy wave (18 m)
+                                   # so the wave spawn + enemy _render path actually runs here
 
 var _scene: Node = null
 var _frame := 0
@@ -72,9 +73,13 @@ func _process(_delta: float) -> bool:
 
 	if targets != null:
 		var ec: int = targets.call("live_count")
-		_lines.append("targets: live enemies=%d kills=%d" % [ec, targets.get("kills")])
-		if ec <= 0:
-			_lines.append("targets FAIL: no enemies present"); ok = false
+		var waves: int = targets.call("scheduled_wave_count")
+		_lines.append("targets: live enemies=%d kills=%d scheduled_waves=%d" % [
+			ec, targets.get("kills"), waves])
+		# Enemies are SCHEDULED (#13) — they may not have spawned yet at the smoke
+		# distance, so assert the wave schedule was wired from the level, not a live count.
+		if waves <= 0:
+			_lines.append("targets FAIL: enemy wave schedule not wired from the level"); ok = false
 
 	_lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write()

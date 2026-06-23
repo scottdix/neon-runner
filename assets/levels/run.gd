@@ -85,8 +85,13 @@ func _ready() -> void:
 	Events.grid_collapsed.connect(_on_grid_collapsed)
 
 	GameState.start_run()
-	# Finish sits at the very end of the track; set it up after the level loads.
-	_finish_line.setup(GameState.active_level.length_m, ship_pos.y)
+	# The level owns the segment schedule (#13): hand the gate formations + enemy waves
+	# to their systems now that the level has loaded. Both stream by track_m on the
+	# shared TrackView projection; the finish sits at the very end of the track.
+	var level: Resource = GameState.active_level
+	_gates.build_formations(level.gate_formations)
+	_targets.set_schedule(level.enemy_waves)
+	_finish_line.setup(level.length_m, ship_pos.y)
 
 
 func _process(delta: float) -> void:

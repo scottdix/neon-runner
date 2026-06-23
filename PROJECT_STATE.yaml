@@ -3,43 +3,36 @@ schema_version: 1
 # Read at /session-start, advanced at /handoff. History depth is 2
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
-  date: "2026-06-22"
-  session: 9
+  date: "2026-06-23"
+  session: 10
   notes: >
+    Session 10. #13 SEGMENT-DRIVEN SPAWNER — all headless-validated (verify_run + verify_combat +
+    verify_scene + new verify_spawner all PASS) + code-reviewed (high, no bugs shipped, 2 robustness
+    fixes). The level owns ONE authored schedule: LevelDef.gate_formations + enemy_waves (STRING
+    ops/kinds so the resource needs no Gate/Targets dependency), streamed by TWO decoupled consumers
+    (no fat director node; Run wires both after start_run). (1) GateSpawner.build_formations(specs)
+    reads the level's formations via new Gate.op_from_string + RECYCLES (frees) formations scrolled
+    past the ship line. (2) Targets is now WAVE-DRIVEN + FINITE: waves spawn by track_m at WORLD-X
+    (spread across the playfield, NOT lanes) and killed/breached/offscreen enemies are REMOVED (the
+    endless respawn is gone); set_schedule duplicates each wave dict so the shared LevelDef array
+    never gets a spawned flag. (3) New verify_spawner.gd (op-map, build, recycle fires-once-then-freed,
+    waves spawn at the mark + world-x spread, finite removal); other verifiers updated for the finite
+    semantics. (4) REVIEW FIXES: a wave defers (never silently lost) if the field is full; gate recycle
+    no longer depends on `triggered`. First wave @18m; 7 waves escalate to a dense mixed close.
+    NOT device-validated (glow/FPS need a phone — #54 acceptance #2 still open).
+  previous_notes: >
     Session 9 (autonomous overnight). COMBAT-DEPTH SLICE for v0.2.0 — all headless-validated
     (verify_run + new verify_combat + new verify_scene all PASS) + code-reviewed (high). (1)
-    REVIEW DEBT #1-#3 PAID: gate economy decoupled — GateSpawner no longer mutates GameState;
-    a gate emits gate_passed, GameState._on_gate_passed commits the new swarm volume + drains the
-    battery on a negative gate; gate.trigger() floors the emitted count. GameState wires the bus
-    in _ready->wire_events() (idempotent; verify scripts call it since autoload _ready is deferred
-    under headless -s). (2) #53 ARCHETYPES: targets.gd rewritten — Glitch (fast low-HP swarm),
-    Looming Rhombus (armored: only takes hits ABOVE armor), Fractal (splits into 2 fractlings when
-    killed below the firepower/volume tier; dies clean above), Fractling. STATS/COLORS per kind.
-    (3) #54 BATCHED COLLISION (D3): Fleet.consume_volumes resolves all enemy volumes vs bullets in
-    ONE pass + x-band cull; consume_near now delegates to it (one impl). (4) #14 SCALE: headless
-    assertion holds bullets bounded (peak ~131) at 48 enemies + 2000 swarm. (5) COMBAT LOOP CLOSED:
-    enemies breaching the ship line drain the Glow Battery (Events.enemy_breached). (6) COMBO: kills
-    route through GameState.register_kill -> ramps a multiplier (wires dormant combo_updated/
-    multiplier_changed), decays via _tick_combo; HUD shows combo xN. (7) REVIEW FIX: a battery-
-    failing breach mid-step could phantom-count a later 0-HP enemy as a kill; fixed with a per-
-    iteration run_active guard + a deterministic regression test. New Events: enemy_breached,
-    enemy_split. NOT device-validated (glow/FPS need a phone — #54 acceptance #2 still open).
-  previous_notes: >
-    Session 8. COMPLETED THE v0.2.0 CORE LOOP (#51 + #11/#56 + #55), all headless-validated
-    (tools/verify_run.gd) + device-validated on TestFlight build #10. (1) #51 finite level:
-    LevelDef resource + level_01.tres (320m @ 8m/s), GameState distance/tick_run/complete_run,
-    shared TrackView scroll projection, scrolling FINISH bar -> "RUN COMPLETE". (2) #11/#56 gates:
-    Gate (ADD/SUB/MUL/DIV apply+display+trigger->gate_passed, polarity colors) + GateSpawner with
-    6 authored Split Choice formations placed by track_m; the gate the ship's x is in at the
-    crossing line mutates GameState.projectile_count (fleet fire reacts via Events). Device-fun.
-    (3) #55 Glow Battery: 0-100 health, -25 per negative gate, fail_run at 0 -> grid_collapsed ->
-    "GRID COLLAPSE" loss overlay + HUD bar. New Events: distance_changed, run_completed,
-    glow_battery_changed, grid_collapsed. (4) SHIP: builds #8/#9/#10 — #9 silently stalled in
-    Apple ingestion (re-shipped identical as #10 -> VALID); #10 submitted for EXTERNAL beta review.
-    (5) TestFlight mgmt: new Fastfile lanes (status/testers/add_tester/beta_diag/beta_submit),
-    created external group "Friends & Family" + tester phresko@gmail.com. (6) Code review (9
-    findings, none blocking) + security review (clean). REVIEW DEBT (now PAID in session 9): gate
-    effect applied by the spawner reaching into GameState; gate_passed emitted a pre-clamp count.
+    REVIEW DEBT #1-#3 PAID: gate economy decoupled — GameState._on_gate_passed commits the new swarm
+    volume + drains the battery on a negative gate; GameState wires the bus in _ready->wire_events()
+    (idempotent; verify scripts call it since autoload _ready is deferred under headless -s). (2) #53
+    ARCHETYPES: Glitch / Looming Rhombus (armored) / Fractal (splits below the firepower tier) /
+    Fractling. (3) #54 BATCHED COLLISION (D3): Fleet.consume_volumes — all enemy volumes vs bullets in
+    ONE pass + x-band cull; consume_near delegates to it. (4) #14 SCALE assertion holds bullets bounded.
+    (5) COMBAT LOOP CLOSED: enemies breaching the ship line drain the Glow Battery (Events.enemy_breached).
+    (6) COMBO: kills route through GameState.register_kill (wires dormant combo/multiplier signals),
+    decays via _tick_combo. (7) REVIEW FIX: per-iteration run_active guard stops a phantom kill after a
+    battery-failing breach. New Events: enemy_breached, enemy_split.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
@@ -47,25 +40,27 @@ last_updated:
 focus:
   active_milestone: "v0.2.0 - Playable Prototype"
   active_epic: "#53 — Entropy enemy faction (enemies + collision)"
-  current_issue: "#13 segment-driven spawner — stream gate AND enemy formations by track_m from LevelDef (replace the hardcoded GateSpawner list + Targets endless-respawn)"
-  next_issue: "#53 cross-cutting enemy behaviours (gate-hijack: enemy parks in a gate, must be killed to claim it; multiply-through-positive-gate) + device perf pass for #54 (60fps dense fleet+swarm on iPhone)"
+  current_issue: "#53 cross-cutting enemy behaviours — gate-hijack (enemy parks in a gate, must be killed to claim the upgrade) + multiply-through-positive-gate (enemy crossing a + gate duplicates)"
+  next_issue: "Device perf pass for #54 (60fps dense fleet+swarm on iPhone, TestFlight build #11) + #8 game state machine (Menu/Playing/Paused/GameOver) to wrap the run in a proper flow"
   notes: >
-    Session 9 DONE (autonomous overnight): combat-depth slice — see SESSION-009. Gate economy
-    DECOUPLED (review debt #1-#3 paid), #53 archetypes (Glitch/Rhombus-armored/Fractal-splits/
-    Fractling) in assets/obstacles/targets.gd, #54 batched collision (Fleet.consume_volumes, one
-    pass + x-band cull; consume_near delegates to it), #14 scale assertion, breach->battery combat
-    loop, kill-combo multiplier in GameState. All headless-green: tools/verify_run + verify_combat +
-    verify_scene. Code-reviewed (high) + 1 bug fixed (phantom kill after a battery-failing breach ->
-    per-iteration run_active guard in targets.step). Main scene res://assets/levels/run.tscn.
-    NEXT (#13): spawning is still ad-hoc — GateSpawner.build_formations() is a HARDCODED list and
-    Targets respawns endlessly. Make a LevelDef-driven schedule that streams gate + enemy formations
-    by track_m on the shared TrackView projection and recycles past the player — one director,
-    replacing both. THEN (#53): gate-hijack + multiply-through-gate enemy behaviours. NOT YET ON
-    DEVICE: glow/FPS need a phone (Intel UHD 630 can't render bloom here) — #54 acceptance #2 (60fps
-    on a real phone) is still OPEN; next ship is TestFlight build #11. MVP balance is rough (battery
-    drain, combo window 2.5s, armor/split tiers are first guesses) — tune after a device playtest.
-    OPS: build #10 still awaiting external Beta App Review; final "Submit for Review" is ASC web UI.
-    Still open: remove Xcode-16.4.0.app (safe to drop — device tests passed).
+    Session 10 DONE: #13 segment-driven spawner — see SESSION-010. The level owns ONE authored
+    schedule (LevelDef.gate_formations + enemy_waves, string ops/kinds), streamed by two decoupled
+    systems: GateSpawner.build_formations(specs) (+ recycle past the ship line) and a wave-driven,
+    FINITE Targets (waves by track_m at world-x; killed/breached/offscreen enemies removed, no
+    respawn). Run wires both after start_run. All headless-green: verify_run/combat/scene/spawner.
+    Code-reviewed (high), 2 robustness fixes (wave defers if field full; gate recycle independent of
+    triggered). Main scene res://assets/levels/run.tscn.
+    NEXT (#53): with archetypes (s9) + scheduled waves (s10) done, build the two cross-cutting enemy
+    interactions — GATE-HIJACK (an enemy parks inside a gate; destroy it before the upgrade applies)
+    and MULTIPLY-THROUGH-POSITIVE-GATE (an enemy crossing a + gate duplicates). These touch both the
+    gate system (gate knows an occupant) and Targets (enemy<->gate position). THEN: device perf pass.
+    NOT YET ON DEVICE: glow/FPS need a phone — #54 acceptance #2 (60fps on a real phone) still OPEN;
+    next ship is TestFlight build #11. Balance is a first guess (first wave @18m; 7 escalating waves)
+    — tune after a device playtest. Schedule lives as @export defaults on LevelDef (v0.5.0 makes it
+    per-level .tres data-driven); avoid editor-saving level_01.tres or it bakes the arrays.
+    UNCOMMITTED at handoff start: untracked style-guide/ (5.7M art PNGs) — NOT in the #13 commit;
+    commit separately. OPS: build #10 still awaiting external Beta App Review. Still open: remove
+    Xcode-16.4.0.app (safe to drop).
 
 # =============================================================================
 # TRACKER

@@ -130,12 +130,12 @@ func _initialize() -> void:
 	var score_b: int = gs.get("score")
 	var splits_b: int = split_seen[0]
 	tg_hi.call("step", 1.0 / 60.0)
-	lines.append("fractal high-fp: enemies=%d (want 1) kills=%d score+=%d splits+=%d" % [
+	lines.append("fractal high-fp: enemies=%d (want 0, removed) kills=%d score+=%d splits+=%d" % [
 		tg_hi.call("live_count"), tg_hi.get("kills"), gs.get("score") - score_b, split_seen[0] - splits_b])
-	if int(tg_hi.call("live_count")) != 1 or int(tg_hi.get("kills")) != 1 or gs.get("score") <= score_b or split_seen[0] != splits_b:
-		lines.append("clean-kill FAIL: enough firepower should kill (not split) a fractal"); ok = false
+	if int(tg_hi.call("live_count")) != 0 or int(tg_hi.get("kills")) != 1 or gs.get("score") <= score_b or split_seen[0] != splits_b:
+		lines.append("clean-kill FAIL: enough firepower should kill (not split) a fractal, then remove it"); ok = false
 	else:
-		lines.append("clean-kill OK: enough firepower destroys a fractal outright + scores")
+		lines.append("clean-kill OK: enough firepower destroys a fractal outright + scores + removes it")
 
 	# 5) Breach — an enemy crossing the ship line drains the Glow Battery + emits.
 	var breach_seen := [0, 0.0]
@@ -214,10 +214,14 @@ func _initialize() -> void:
 	fl_s.call("set_volume", 2000)
 	var tg_s: Node2D = TargetsS.new()
 	tg_s.call("set_fleet", fl_s)
-	tg_s.call("set_breach_line", 1680.0)
-	tg_s.call("spawn", 48)
+	# Breach left disabled — pure collision-cost stress, not a gameplay sim. Top the
+	# enemy set back up to MAX each frame (they're finite now: killed/offscreen are
+	# removed), re-fetching _enemies since step() reassigns it to the survivor array.
 	var peak_live := 0
 	for i in 600:
+		var en_s: Array = tg_s.get("_enemies")
+		while en_s.size() < 48:
+			en_s.append(tg_s.call("_new_enemy", TargetsS.KIND_GLITCH, 400.0))
 		fl_s.call("step", 1.0 / 60.0)
 		tg_s.call("step", 1.0 / 60.0)
 		peak_live = maxi(peak_live, int(fl_s.call("live_count")))

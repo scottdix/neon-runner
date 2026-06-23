@@ -5,13 +5,15 @@ extends Node2D
 ## (left/right half of the lane); the ship's x at the moment the formation reaches
 ## the crossing line picks which one applies — instant mental-math choice.
 ##
-## MVP is a hardcoded formation list (GAME_SCOPE §4.5: "MVP = hardcoded segment
-## list; data-driven director v0.5.0"). Migrating placement into LevelDef and a
-## streaming spawner is #13. Formations scroll on the shared TrackView projection
-## so they move in lockstep with the finish line.
+## The formation schedule is now authored on the LevelDef (#13): Run passes
+## `level.gate_formations` to build_formations() after the level loads. Each spec uses
+## STRING ops ("add"/"sub"/"mul"/"div"); we map them via Gate.op_from_string. (GAME_SCOPE
+## §8: MVP = authored segment list on the level; data-driven .tres director is v0.5.0.)
+## Formations scroll on the shared TrackView projection so they move in lockstep with
+## the finish line, and are RECYCLED (freed) once they scroll well past the ship line.
 ##
-## `update(distance, ship_x)` is pure logic (positions + crossing trigger) so it
-## runs/asserts headless; _process just feeds it GameState.distance + the latest
+## `update(distance, ship_x)` is pure logic (positions + crossing trigger + recycle) so
+## it runs/asserts headless; _process just feeds it GameState.distance + the latest
 ## steer x. Triggering only calls gate.trigger(): the gate emits gate_passed and
 ## GameState applies the economy effect (swarm volume + battery). The spawner holds
 ## no GameState mutation — fully decoupled via the Events bus.
@@ -22,11 +24,14 @@ const TRACK := preload("res://assets/levels/track.gd")
 const LANE_SPLIT := 540.0           # left/right boundary (half of 1080)
 const LEFT_CENTER := 280.0
 const RIGHT_CENTER := 800.0
+const RECYCLE_MARGIN := 220.0       # px below the screen before a passed formation is freed
 
 var _formations: Array = []         # [{track_m, left:Gate, right:Gate, triggered:bool}, ...]
 var _trigger_y := 1680.0            # ship line — a formation fires as it crosses this
 var _ship_x := 540.0
+var _design := Vector2(1080, 1920)
 var triggers: int = 0               # gates fired so far (debug/verify)
+var recycled: int = 0               # formations freed after passing the player (debug/verify)
 
 
 ## Run calls this with the ship's canvas y before adding us to the tree.
@@ -35,7 +40,9 @@ func setup(trigger_y: float) -> void:
 
 
 func _ready() -> void:
-	build_formations()
+	_design = Vector2(
+		ProjectSettings.get_setting("display/window/size/viewport_width", 1080),
+		ProjectSettings.get_setting("display/window/size/viewport_height", 1920))
 	Events.player_steered.connect(func(x: float, _n: float): _ship_x = x)
 
 
@@ -43,34 +50,31 @@ func _process(_delta: float) -> void:
 	update(GameState.distance, _ship_x)
 
 
-## Author the MVP Split Choice schedule and instantiate each formation's two gates.
-## Choices escalate: easy growth early, real trade-offs (grow vs trap, ×N vs ÷N)
-## later. All sit before the finish line (LevelDef default length 320 m).
-func build_formations() -> void:
-	var O := GATE.Operation
-	var specs := [
-		{"m": 45.0,  "l": [O.MULTIPLY, 2.0], "r": [O.ADD, 8.0]},       # ×2 vs +8 (count-dependent)
-		{"m": 90.0,  "l": [O.ADD, 15.0],     "r": [O.SUBTRACT, 5.0]},  # grow vs trap
-		{"m": 135.0, "l": [O.MULTIPLY, 3.0], "r": [O.DIVIDE, 2.0]},    # triple vs halve
-		{"m": 180.0, "l": [O.DIVIDE, 2.0],   "r": [O.MULTIPLY, 2.0]},  # mirror — trap on the left
-		{"m": 225.0, "l": [O.ADD, 25.0],     "r": [O.MULTIPLY, 3.0]},
-		{"m": 270.0, "l": [O.SUBTRACT, 10.0], "r": [O.ADD, 30.0]},
-	]
+## Instantiate the level's Split Choice schedule (`level.gate_formations`). Each spec is
+## `{"m": metres, "l": [op_string, value], "r": [op_string, value]}`. Replaces any
+## existing formations (frees their gates). Choices escalate across the track.
+func build_formations(specs: Array) -> void:
+	_clear_formations()
 	for s in specs:
+		var l: Array = s["l"]
+		var r: Array = s["r"]
 		var left: Node2D = GATE.new()
 		left.name = "GateL_%d" % int(s["m"])
-		left.configure(s["l"][0], s["l"][1], 0.0, LANE_SPLIT, LEFT_CENTER)
+		left.configure(GATE.op_from_string(l[0]), float(l[1]), 0.0, LANE_SPLIT, LEFT_CENTER)
 		var right: Node2D = GATE.new()
 		right.name = "GateR_%d" % int(s["m"])
-		right.configure(s["r"][0], s["r"][1], LANE_SPLIT, 1080.0, RIGHT_CENTER)
+		right.configure(GATE.op_from_string(r[0]), float(r[1]), LANE_SPLIT, 1080.0, RIGHT_CENTER)
 		add_child(left)
 		add_child(right)
 		_formations.append({"track_m": s["m"], "left": left, "right": right, "triggered": false})
 
 
-## Scroll every formation to its current y and fire any that just crossed the line.
+## Scroll every formation to its current y, fire any that just crossed the line, and
+## RECYCLE (free) any that have scrolled well past the ship — keeping only the
+## formations still in play (#13: "recycles gates that pass behind the player").
 func update(distance: float, ship_x: float) -> void:
 	_ship_x = ship_x
+	var survivors: Array = []
 	for f in _formations:
 		var y: float = TRACK.screen_y(f["track_m"], distance, _trigger_y)
 		f["left"].position.y = y
@@ -83,3 +87,21 @@ func update(distance: float, ship_x: float) -> void:
 			# longer mutates GameState directly — decoupling (CLAUDE.md / review debt).
 			chosen.trigger(GameState.projectile_count)
 			triggers += 1
+		# Recycle once it's well past the bottom, regardless of triggered: with monotonic
+		# distance any formation reaching here has already crossed (and fired at) the ship
+		# line, so this only adds robustness — a passed formation is never re-projected
+		# forever, even if its crossing frame were ever skipped.
+		if y > _design.y + RECYCLE_MARGIN:
+			f["left"].queue_free()
+			f["right"].queue_free()
+			recycled += 1
+		else:
+			survivors.append(f)
+	_formations = survivors
+
+
+func _clear_formations() -> void:
+	for f in _formations:
+		f["left"].queue_free()
+		f["right"].queue_free()
+	_formations.clear()

@@ -20,3 +20,38 @@ extends Resource
 ## MVP run lasts length_m / scroll_speed_mps seconds (320 / 8 = 40 s — a tunable
 ## first-playtest length; the full ~5-min crescendo is the director's job, #13).
 @export var scroll_speed_mps: float = 8.0
+
+## --- Segment schedule (#13) --------------------------------------------------
+## What appears along the track and WHERE (by `m` = metres into the run). This is
+## the single authored source the GateSpawner + Targets both stream from (GAME_SCOPE
+## §8: "segment-driven spawner — world-x placement, NOT lane indices"). Ops/kinds are
+## STRINGS so this resource needs no dependency on Gate/Targets; each system maps them.
+##
+## MVP authors the schedule here as the script default (GAME_SCOPE: "MVP = hardcoded
+## segment list; data-driven director v0.5.0"). A per-level .tres can override these
+## later — until then level_01.tres just uses these defaults.
+
+## Split Choice gate formations: `{"m": metres, "l": [op, value], "r": [op, value]}`.
+## `op` is "add" | "sub" | "mul" | "div"; the ship's x at the crossing picks l vs r.
+@export var gate_formations: Array = [
+	{"m": 45.0,  "l": ["mul", 2.0],  "r": ["add", 8.0]},   # ×2 vs +8 (count-dependent)
+	{"m": 90.0,  "l": ["add", 15.0], "r": ["sub", 5.0]},   # grow vs trap
+	{"m": 135.0, "l": ["mul", 3.0],  "r": ["div", 2.0]},   # triple vs halve
+	{"m": 180.0, "l": ["div", 2.0],  "r": ["mul", 2.0]},   # mirror — trap on the left
+	{"m": 225.0, "l": ["add", 25.0], "r": ["mul", 3.0]},
+	{"m": 270.0, "l": ["sub", 10.0], "r": ["add", 30.0]},
+]
+
+## Enemy waves: `{"m": metres, "kind": name, "count": n, "x"?: centre, "spread"?: px}`.
+## `kind` is "glitch" | "rhombus" | "fractal" | "mixed". Without `x`, the wave is
+## spread evenly across the playfield; with `x`, it clusters around that world-x.
+## Escalates: light glitch probes early → fractals + a rhombus mid → dense mixed late.
+@export var enemy_waves: Array = [
+	{"m": 18.0,  "kind": "glitch",  "count": 4},
+	{"m": 60.0,  "kind": "glitch",  "count": 5},
+	{"m": 105.0, "kind": "fractal", "count": 2},
+	{"m": 150.0, "kind": "mixed",   "count": 5},
+	{"m": 200.0, "kind": "rhombus", "count": 1, "x": 540.0},
+	{"m": 240.0, "kind": "mixed",   "count": 6},
+	{"m": 290.0, "kind": "glitch",  "count": 7},
+]

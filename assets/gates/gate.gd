@@ -13,6 +13,17 @@ extends Node2D
 
 enum Operation { ADD, SUBTRACT, MULTIPLY, DIVIDE }
 
+
+## Map an authored op string (LevelDef schedule, #13) to an Operation. Keeps LevelDef
+## free of any dependency on this enum — the data stays plain strings. Unknown → ADD.
+static func op_from_string(s: String) -> int:
+	match s:
+		"add": return Operation.ADD
+		"sub", "subtract": return Operation.SUBTRACT
+		"mul", "multiply": return Operation.MULTIPLY
+		"div", "divide": return Operation.DIVIDE
+	return Operation.ADD
+
 const BOX := Vector2(440.0, 150.0)          # visible panel size
 const FLASH := Color(6.0, 5.5, 6.0, 1.0)    # white-hot pulse on trigger
 

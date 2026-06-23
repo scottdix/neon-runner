@@ -12,6 +12,12 @@ extends Node2D
 ##                 vaporises it outright. "Insufficient firepower splits it" (#53).
 ##   • FRACTLING — the small fast shards a Fractal leaves behind; can't re-split.
 ##
+## Spawning is SEGMENT-DRIVEN + FINITE (#13): Run injects the level's `enemy_waves`
+## schedule via set_schedule(); each wave spawns its enemies (at authored world-x) when
+## the run's distance reaches its `m` mark, and killed/breached/offscreen enemies are
+## REMOVED (no endless respawn). The level is therefore a finite, authored sequence of
+## waves, not an infinite spawner. spawn(n) remains for tests / ad-hoc bursts.
+##
 ## Damage is resolved in ONE batched pass (Fleet.consume_volumes): all enemies are
 ## queried against the live bullets together, not one consume_near() per enemy — the
 ## D3 batched collision layer (#54), with an x-band cull so cost stays ~O(bullets)
@@ -36,6 +42,12 @@ const BURST_LIFE := 0.30            # seconds a death burst lives
 ## Above it, the fleet has enough firepower to destroy it cleanly.
 const FRACTAL_SPLIT_TIER := 60
 
+## Wave spawning (#13): enemies in a wave enter from above the top, staggered, and the
+## wave clears `WAVE_EDGE_MARGIN` of the screen edges for its world-x spread.
+const WAVE_STAGGER := 70.0          # vertical gap (px) between successive enemies in a wave
+const WAVE_EDGE_MARGIN := 160.0     # keep wave enemies this far from each screen edge
+const WAVE_DEFAULT_SPREAD := 220.0  # half-width (px) of a clustered wave when "x" is given
+
 ## Per-archetype stat block. Looked up by kind; enemies carry a copy so test code can
 ## still inject bare dicts (they default to GLITCH behaviour via the get() fallbacks).
 const STATS := {
@@ -53,11 +65,10 @@ const COLORS := {
 	KIND_FRACTLING: Color(3.0, 2.4, 0.9, 1.0),    # pale amber shard
 }
 
-@export var enemy_count := 7
-
 var _design := Vector2(1080, 1920)
 var _fleet: Node2D                  # injected by Run; queried for bullet hits
 var _breach_line: float = 1.0e9     # disabled until Run injects the ship line (set_breach_line)
+var _waves: Array = []              # [{m, kind, count, x?, spread?, spawned:bool}, ...] schedule
 var _enemies: Array[Dictionary] = []
 var _bursts: Array = []             # [{pos:Vector2, life:float, col:Color}, ...] death pops
 var _rng := RandomNumberGenerator.new()
@@ -72,7 +83,7 @@ func _ready() -> void:
 		ProjectSettings.get_setting("display/window/size/viewport_width", 1080),
 		ProjectSettings.get_setting("display/window/size/viewport_height", 1920))
 	_build_multimesh()
-	spawn(enemy_count)
+	# No initial spawn — enemies arrive via the scheduled waves (set_schedule).
 
 
 func _process(delta: float) -> void:
@@ -92,19 +103,96 @@ func set_breach_line(y: float) -> void:
 	_breach_line = y
 
 
-## Spawn a fresh wave as a weighted archetype mix (mostly glitches, some fractals,
-## the occasional rhombus). Deterministic given the seed so headless runs are stable.
+## Install the level's enemy-wave schedule (#13). Each wave is duplicated and tagged
+## `spawned:false` so we never mutate the LevelDef's shared dicts (that would leak the
+## spawned flag across runs). Waves fire by `m` as the run's distance reaches them.
+func set_schedule(waves: Array) -> void:
+	_waves = []
+	for w in waves:
+		var c: Dictionary = (w as Dictionary).duplicate()
+		c["spawned"] = false
+		_waves.append(c)
+
+
+func scheduled_wave_count() -> int:
+	return _waves.size()
+
+
+## Immediately spawn n enemies (weighted archetype mix) scattered down the upper track.
+## Not the gameplay path (that's scheduled waves) — kept for tests / ad-hoc bursts.
 func spawn(n: int) -> void:
 	_enemies.clear()
 	for i in mini(n, MAX_ENEMIES):
 		_enemies.append(_new_enemy(_pick_kind(), _rng.randf() * _design.y * 0.4))
 
 
-## Advance one frame. Two passes: (1) batched damage — every enemy's hit volume is
-## resolved against the live bullets in ONE Fleet.consume_volumes call; (2) movement
-## + lifecycle (drift down, flash decay, death/split, breach, offscreen recycle).
+## Spawn any scheduled wave whose `m` mark the run has now reached (#13). Enemies enter
+## from above the top, staggered, at the wave's authored world-x. No-op without a
+## schedule or while the run is inactive.
+func _spawn_due_waves() -> void:
+	if _waves.is_empty() or not GameState.run_active:
+		return
+	var d: float = GameState.distance
+	for w in _waves:
+		if not bool(w["spawned"]) and d >= float(w["m"]):
+			# Defer (don't mark spawned) if the field is full, so a wave is never
+			# silently lost wholesale — it spawns once room frees up. (With the MVP
+			# schedule total < MAX_ENEMIES this never triggers, but it keeps the wave
+			# logic correct in isolation for denser future levels.)
+			if _enemies.size() >= MAX_ENEMIES:
+				continue
+			w["spawned"] = true
+			_spawn_wave(w)
+
+
+func _spawn_wave(w: Dictionary) -> void:
+	var count: int = int(w["count"])
+	var kind_name: String = String(w.get("kind", "glitch"))
+	for i in count:
+		if _enemies.size() >= MAX_ENEMIES:
+			break
+		var kind: int = _kind_from_string(kind_name)   # "mixed" re-rolls per enemy
+		var start_y: float = -float(STATS[kind]["size"]) - float(i) * WAVE_STAGGER
+		var e: Dictionary = _new_enemy(kind, start_y)
+		var p: Vector2 = e["pos"]
+		p.x = _wave_x(w, i, count)                      # world-x placement (NOT lanes)
+		e["pos"] = p
+		_enemies.append(e)
+
+
+## World-x for enemy `i` of a `count`-wide wave. Clustered around `x` (± spread) if the
+## wave authored one, else spread evenly across the playfield between the edge margins.
+func _wave_x(w: Dictionary, i: int, count: int) -> float:
+	if w.has("x"):
+		if count <= 1:
+			return float(w["x"])
+		var spread: float = float(w.get("spread", WAVE_DEFAULT_SPREAD))
+		var off: float = lerpf(-spread, spread, float(i) / float(count - 1))
+		return clampf(float(w["x"]) + off, WAVE_EDGE_MARGIN, _design.x - WAVE_EDGE_MARGIN)
+	if count <= 1:
+		return _design.x * 0.5
+	return lerpf(WAVE_EDGE_MARGIN, _design.x - WAVE_EDGE_MARGIN, float(i) / float(count - 1))
+
+
+func _kind_from_string(s: String) -> int:
+	match s:
+		"glitch": return KIND_GLITCH
+		"rhombus": return KIND_RHOMBUS
+		"fractal": return KIND_FRACTAL
+		"fractling": return KIND_FRACTLING
+		"mixed": return _pick_kind()
+	return KIND_GLITCH
+
+
+## Advance one frame. (0) spawn any scheduled wave now due; (1) batched damage — every
+## enemy's hit volume resolved against the live bullets in ONE Fleet.consume_volumes
+## call; (2) movement + lifecycle, rebuilding the live set so killed/breached/offscreen
+## enemies are REMOVED (finite, no respawn) and Fractal splits add fractlings.
 ## Pure + GPU-free for headless.
 func step(delta: float) -> void:
+	# (0) Scheduled spawns (#13). No-op without a schedule or while the run is inactive.
+	_spawn_due_waves()
+
 	# (1) Batched projectile→enemy damage (#54). One pass over the bullets for ALL
 	# enemies instead of one survivor-rebuild per enemy.
 	if _fleet != null and not _enemies.is_empty():
@@ -118,8 +206,10 @@ func step(delta: float) -> void:
 			if hits[i] > 0:
 				_apply_damage(_enemies[i], hits[i])
 
-	# (2) Movement + lifecycle. Splits append new fractlings; collect them and add
-	# after the loop so we never mutate _enemies mid-iteration.
+	# (2) Movement + lifecycle. Rebuild the live set: survivors are kept, dead/breached/
+	# offscreen are dropped (finite — no respawn), Fractal splits push fractlings into
+	# to_add (added after the loop so we never mutate _enemies mid-iteration).
+	var survivors: Array[Dictionary] = []
 	var to_add: Array[Dictionary] = []
 	for e in _enemies:
 		var p: Vector2 = e["pos"]
@@ -128,21 +218,28 @@ func step(delta: float) -> void:
 		e["flash"] = maxf(0.0, float(e["flash"]) - delta / FLASH_DECAY)
 		# If the run has already ended this frame — e.g. an earlier enemy in THIS loop
 		# breached and emptied the battery, failing the run synchronously — stop
-		# scoring/breaching. Otherwise a later kill here would bump `kills` + emit
-		# enemy_destroyed while register_kill (run_active=false) awards nothing, so the
-		# counter/signal/score would disagree on the failing frame. Movement above is
-		# cosmetic and harmless. (Next frame the tree is paused, so step() won't run.)
+		# scoring/breaching. Keep the enemy (frozen) so nothing is miscounted; the tree
+		# pauses next frame so step() won't run again.
 		if not GameState.run_active:
+			survivors.append(e)
 			continue
 		if float(e["hp"]) <= 0.0:
-			_resolve_death(e, to_add)
+			if _is_splitting_fractal(e):
+				Events.enemy_split.emit(e["pos"])
+				to_add.append(_fractling_at(p + Vector2(-46.0, -10.0)))
+				to_add.append(_fractling_at(p + Vector2(46.0, -10.0)))
+			else:
+				_kill(e)                                  # score/burst/emit, then dropped
 		elif p.y >= _breach_line:
-			_breach(e)
+			_breach(e)                                    # drain/emit, then dropped
 		elif p.y > _design.y + float(e["size"]):
-			_respawn(e, -float(e["size"]))           # offscreen fallback (breach disabled)
+			pass                                          # offscreen — dropped (no respawn)
+		else:
+			survivors.append(e)                           # alive, on-screen — keep
 	for ne in to_add:
-		if _enemies.size() < MAX_ENEMIES:
-			_enemies.append(ne)
+		if survivors.size() < MAX_ENEMIES:
+			survivors.append(ne)
+	_enemies = survivors
 
 	# Age death bursts.
 	var live_bursts: Array = []
@@ -175,26 +272,22 @@ func _apply_damage(e: Dictionary, hits: int) -> void:
 	e["flash"] = 1.0
 
 
-## An enemy hit 0 HP. A FRACTAL with insufficient firepower (swarm volume below the
-## split tier) SPLITS into two fractlings instead of dying — no score, more threats.
-## Otherwise it dies: score (combo), burst, recycle.
-func _resolve_death(e: Dictionary, to_add: Array[Dictionary]) -> void:
-	var kind: int = int(e.get("kind", KIND_GLITCH))
-	if kind == KIND_FRACTAL and bool(e.get("split", true)) and GameState.projectile_count < FRACTAL_SPLIT_TIER:
-		Events.enemy_split.emit(e["pos"])
-		var base_pos: Vector2 = e["pos"]
-		var shard := _new_enemy(KIND_FRACTLING, base_pos.y)
-		shard["pos"] = base_pos + Vector2(-46.0, -10.0)
-		# Reuse this slot as the first fractling; queue the second.
-		for k in shard:
-			e[k] = shard[k]
-		var shard2 := _new_enemy(KIND_FRACTLING, base_pos.y)
-		shard2["pos"] = base_pos + Vector2(46.0, -10.0)
-		to_add.append(shard2)
-	else:
-		_kill(e)
+## A 0-HP enemy that should SPLIT rather than die: a Fractal hit with insufficient
+## firepower (swarm volume below the split tier). The two fractlings replace it.
+func _is_splitting_fractal(e: Dictionary) -> bool:
+	return int(e.get("kind", KIND_GLITCH)) == KIND_FRACTAL \
+		and bool(e.get("split", true)) \
+		and GameState.projectile_count < FRACTAL_SPLIT_TIER
 
 
+func _fractling_at(pos: Vector2) -> Dictionary:
+	var f := _new_enemy(KIND_FRACTLING, pos.y)
+	f["pos"] = pos
+	return f
+
+
+## An enemy died to the fleet: score it (combo), pop a burst, announce. The caller drops
+## it from the live set (finite — no respawn).
 func _kill(e: Dictionary) -> void:
 	kills += 1
 	var points: int = int(e.get("points", 100))
@@ -202,17 +295,15 @@ func _kill(e: Dictionary) -> void:
 	if _bursts.size() < MAX_BURSTS:
 		_bursts.append({"pos": e["pos"], "life": BURST_LIFE, "col": _enemy_color(e)})
 	Events.enemy_destroyed.emit(e["pos"], points)
-	_respawn(e, -float(e["size"]))
 
 
-## An enemy reached the ship line: it breaches, draining the Glow Battery by its
-## breach cost (the loss pressure that makes shooting matter, #55), then recycles.
+## An enemy reached the ship line: it breaches, draining the Glow Battery by its breach
+## cost (the loss pressure that makes shooting matter, #55). Caller drops it.
 func _breach(e: Dictionary) -> void:
 	breaches += 1
 	var dmg: float = float(e.get("breach", 6.0))
 	GameState.drain_battery(dmg)
 	Events.enemy_breached.emit(e["pos"], dmg)
-	_respawn(e, -float(e["size"]))
 
 
 func _pick_kind() -> int:
@@ -236,15 +327,6 @@ func _new_enemy(kind: int, start_y: float) -> Dictionary:
 		"breach": float(s["breach"]), "split": bool(s["split"]),
 		"flash": 0.0,
 	}
-
-
-## Recycle a dead/offscreen slot into a fresh enemy at the top (endless waves for the
-## MVP; the finite, scheduled spawner is #13). Re-rolls the archetype.
-func _respawn(e: Dictionary, start_y: float) -> void:
-	var fresh := _new_enemy(_pick_kind(), start_y)
-	for k in fresh:
-		e[k] = fresh[k]
-	# Keep the slot keyed even if a bare (test-injected) dict lacked some fields.
 
 
 # --- Rendering ---------------------------------------------------------------

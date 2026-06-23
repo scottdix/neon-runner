@@ -253,8 +253,8 @@ func _initialize() -> void:
 	# gate (-5). Volume: 20 ->(×2) 40 ->(-5) 35; the unchosen gates never fire.
 	var sp: Node2D = SpawnerS.new()
 	sp.call("setup", 1680.0)
-	sp.call("build_formations")
-	gs.call("start_run")                         # reseed projectile_count = 20
+	gs.call("start_run")                         # reseed projectile_count = 20 + load the level
+	sp.call("build_formations", gs.get("active_level").gate_formations)
 	sp.call("update", 45.0, 200.0)               # formation @45m crossing, ship on the left
 	var after_left: int = gs.get("projectile_count")
 	sp.call("update", 90.0, 900.0)               # formation @90m crossing, ship on the right
@@ -303,8 +303,8 @@ func _initialize() -> void:
 	# Negative gate drains the battery; positive gate leaves it full.
 	var sp2: Node2D = SpawnerS.new()
 	sp2.call("setup", 1680.0)
-	sp2.call("build_formations")
-	gs.call("start_run")                        # battery -> 100, vol -> 20
+	gs.call("start_run")                        # battery -> 100, vol -> 20 + load the level
+	sp2.call("build_formations", gs.get("active_level").gate_formations)
 	sp2.call("update", 45.0, 200.0)             # @45m left = ×2 (positive): vol 40, bat 100
 	var bat_pos: float = gs.get("glow_battery")
 	sp2.call("update", 90.0, 900.0)             # @90m right = -5 (negative): vol 35, bat drains
