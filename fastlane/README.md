@@ -39,6 +39,46 @@ Register the bundle ID via Connect API (produce needs an Apple ID; this doesn't)
 
 Create + install the App Store provisioning profile
 
+### ios status
+
+```sh
+[bundle exec] fastlane ios status
+```
+
+List recent TestFlight builds + processing state
+
+### ios testers
+
+```sh
+[bundle exec] fastlane ios testers
+```
+
+List beta groups + testers
+
+### ios add_tester
+
+```sh
+[bundle exec] fastlane ios add_tester
+```
+
+Add an external TestFlight tester to a (new or existing) group
+
+### ios beta_diag
+
+```sh
+[bundle exec] fastlane ios beta_diag
+```
+
+Diagnose a build's external-beta readiness
+
+### ios beta_submit
+
+```sh
+[bundle exec] fastlane ios beta_submit
+```
+
+Distribute a built build externally + submit for Beta App Review
+
 ### ios ship
 
 ```sh

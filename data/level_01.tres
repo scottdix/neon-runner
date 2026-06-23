@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="LevelDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/level_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+display_name = "Level 01"
+length_m = 320.0
+scroll_speed_mps = 8.0

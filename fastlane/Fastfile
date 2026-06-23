@@ -62,6 +62,126 @@ platform :ios do
     UI.success("SIGH_PROFILE_PATH=#{lane_context[SharedValues::SIGH_PROFILE_PATH]}")
   end
 
+  # Show recent TestFlight builds + their processing state (PROCESSING / VALID /
+  # INVALID). Read-only; handy after `ship` to see when a build goes installable.
+  desc "List recent TestFlight builds + processing state"
+  lane :status do
+    require "spaceship"
+    token = Spaceship::ConnectAPI::Token.create(
+      key_id: API_KEY_ID, issuer_id: API_ISSUER, filepath: API_KEY_PATH)
+    Spaceship::ConnectAPI.token = token
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    builds = app.get_builds(includes: "preReleaseVersion", limit: 6, sort: "-uploadedDate")
+    if builds.empty?
+      UI.important("No builds found for #{APP_ID}")
+    else
+      builds.each do |b|
+        ver = b.pre_release_version&.version || "?"
+        UI.message("v#{ver} (build #{b.version})  state=#{b.processing_state}  uploaded=#{b.uploaded_date}  expired=#{b.expired}")
+      end
+    end
+  end
+
+  # List TestFlight beta groups + their testers. Read-only.
+  desc "List beta groups + testers"
+  lane :testers do
+    require "spaceship"
+    token = Spaceship::ConnectAPI::Token.create(
+      key_id: API_KEY_ID, issuer_id: API_ISSUER, filepath: API_KEY_PATH)
+    Spaceship::ConnectAPI.token = token
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    groups = app.get_beta_groups(includes: "betaTesters")
+    groups.each do |g|
+      kind = g.is_internal_group ? "internal" : "external"
+      testers = (g.beta_testers || []).map { |t| t.email }.join(", ")
+      UI.message("group '#{g.name}' (#{kind}, id #{g.id}) testers=[#{testers}]")
+    end
+  end
+
+  # Create (if needed) an EXTERNAL beta group and add a tester to it. External
+  # testers can only install once a build assigned to the group passes Apple's
+  # Beta App Review — adding the tester here does NOT itself require review.
+  #   fastlane ios add_tester email:phresko@gmail.com first:Patrick last:Hresko group:"Friends & Family"
+  desc "Add an external TestFlight tester to a (new or existing) group"
+  lane :add_tester do |opts|
+    require "spaceship"
+    token = Spaceship::ConnectAPI::Token.create(
+      key_id: API_KEY_ID, issuer_id: API_ISSUER, filepath: API_KEY_PATH)
+    Spaceship::ConnectAPI.token = token
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    UI.user_error!("missing email:") if opts[:email].to_s.empty?
+    group_name = opts[:group] || "Friends & Family"
+
+    group = app.get_beta_groups(includes: "betaTesters").find { |g| g.name == group_name }
+    if group.nil?
+      group = app.create_beta_group(group_name: group_name, is_internal_group: false)
+      UI.success("Created external group '#{group_name}' (id #{group.id})")
+    else
+      UI.message("Group '#{group_name}' already exists (id #{group.id})")
+    end
+
+    Spaceship::ConnectAPI.post_beta_tester_assignment(
+      beta_group_ids: [group.id],
+      attributes: {
+        email: opts[:email],
+        firstName: opts[:first].to_s,
+        lastName: opts[:last].to_s
+      })
+    UI.success("Added #{opts[:email]} (#{opts[:first]} #{opts[:last]}) to '#{group_name}'")
+  end
+
+  # Read-only diagnostic: what does a build still need before external beta review?
+  desc "Diagnose a build's external-beta readiness"
+  lane :beta_diag do |opts|
+    require "spaceship"
+    token = Spaceship::ConnectAPI::Token.create(
+      key_id: API_KEY_ID, issuer_id: API_ISSUER, filepath: API_KEY_PATH)
+    Spaceship::ConnectAPI.token = token
+    app = Spaceship::ConnectAPI::App.find(APP_ID)
+    want = (opts[:build] || "10").to_s
+    build = app.get_builds(includes: "preReleaseVersion,betaGroups,buildBetaDetail,betaAppReviewSubmission", limit: 30, sort: "-uploadedDate")
+               .find { |b| b.version == want }
+    UI.user_error!("build #{want} not found") if build.nil?
+    bbd = build.build_beta_detail
+    UI.message("build #{build.version} id=#{build.id} state=#{build.processing_state} missing_compliance=#{build.missing_export_compliance?} ext_state=#{bbd&.external_build_state}")
+    app.get_beta_app_localizations(includes: nil).each do |l|
+      UI.message("beta_app_loc #{l.locale}: desc=#{!l.description.to_s.empty?} feedback=#{l.feedback_email}")
+    end
+    build.get_beta_build_localizations.each do |l|
+      UI.message("beta_build_loc #{l.locale}: whatsNew=#{!l.whats_new.to_s.empty?}")
+    end
+  end
+
+  # Distribute an ALREADY-UPLOADED build to an external group + submit for Apple's
+  # Beta App Review (required before external testers can install). Uses the
+  # supported upload_to_testflight distribute_only path so it sets test info +
+  # "what to test" + assigns the group + submits in one call.
+  #   fastlane ios beta_submit build:10 group:"Friends & Family"
+  desc "Distribute a built build externally + submit for Beta App Review"
+  lane :beta_submit do |opts|
+    upload_to_testflight(
+      app_identifier: APP_ID,
+      app_platform: "ios",
+      distribute_only: true,
+      app_version: opts[:version] || "0.1.0",
+      build_number: (opts[:build] || "10").to_s,
+      distribute_external: true,
+      groups: [opts[:group] || "Friends & Family"],
+      changelog: opts[:whatsnew] || "Core loop: slide to steer; pass + / × gates to grow your swarm and − / ÷ gates to shrink it (red gates also drain the Glow Battery); reach the finish for RUN COMPLETE, or hit 0 battery for GRID COLLAPSE. Feedback on game feel welcome.",
+      beta_app_description: "Neon Splice is a neon vector survival shooter. Steer your ship, grow a swarm of bullets through multiplier gates, and reach the finish line before your Glow Battery drains.",
+      beta_app_feedback_email: opts[:email] || "scott.dix@gmail.com",
+      beta_app_review_info: {
+        contact_email: "scott.dix@gmail.com",
+        contact_first_name: "Scott",
+        contact_last_name: "Dix",
+        contact_phone: "724-972-1120",
+        demo_account_required: false
+      },
+      submit_beta_review: true,
+      notify_external_testers: true
+    )
+  end
+
   # Build the Godot-generated Xcode project and push to TestFlight.
   # Scheme is filled in once we know the generated project's scheme name.
   desc "Archive + upload to TestFlight"

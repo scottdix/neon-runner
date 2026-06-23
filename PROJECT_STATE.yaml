@@ -4,55 +4,58 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-22"
-  session: 7
+  session: 8
   notes: >
+    Session 8. COMPLETED THE v0.2.0 CORE LOOP (#51 + #11/#56 + #55), all headless-validated
+    (tools/verify_run.gd) + device-validated on TestFlight build #10. (1) #51 finite level:
+    LevelDef resource + level_01.tres (320m @ 8m/s), GameState distance/tick_run/complete_run,
+    shared TrackView scroll projection, scrolling FINISH bar -> "RUN COMPLETE". (2) #11/#56 gates:
+    Gate (ADD/SUB/MUL/DIV apply+display+trigger->gate_passed, polarity colors) + GateSpawner with
+    6 authored Split Choice formations placed by track_m; the gate the ship's x is in at the
+    crossing line mutates GameState.projectile_count (fleet fire reacts via Events). Device-fun.
+    (3) #55 Glow Battery: 0-100 health, -25 per negative gate, fail_run at 0 -> grid_collapsed ->
+    "GRID COLLAPSE" loss overlay + HUD bar. New Events: distance_changed, run_completed,
+    glow_battery_changed, grid_collapsed. (4) SHIP: builds #8/#9/#10 — #9 silently stalled in
+    Apple ingestion (re-shipped identical as #10 -> VALID); #10 submitted for EXTERNAL beta review.
+    (5) TestFlight mgmt: new Fastfile lanes (status/testers/add_tester/beta_diag/beta_submit),
+    created external group "Friends & Family" + tester phresko@gmail.com. (6) Code review (9
+    findings, none blocking) + security review (clean). REVIEW DEBT: gate effect applied by the
+    spawner reaching into GameState, not GameState reacting to gate_passed (CLAUDE.md decoupling);
+    gate_passed emits a pre-clamp new_count. Fold into #13/#53 so they don't duplicate the dance.
+  previous_notes: >
     Session 7. (1) TESTFLIGHT INSTALLABLE: build #1 was packaged iPad-only (Godot
     targeted_device_family=1 == iPad in its enum) -> "incompatible" on the iPhone 12 Pro.
     Fixed to 2 (iPhone & iPad, UIDeviceFamily [1,2]); created internal TestFlight group +
     tester (scottdix@gmail.com, no dot) via ASC API. (2) #6 POC DEVICE-VALIDATED: glow blooms,
-    FPS 59-60 on the iPhone 12 Pro -- the last check the Intel mini couldn't do. (3) BUILT THE
-    MVP GAMEPLAY SLICE (#9/#10/#52, partial #14), device-validated: new GameState autoload (#2),
-    Events-bus extensions, new Run main scene (replaces the POC) = analog slide-steer + always-on
-    MultiMesh fire stream + shootable exploding targets + HUD; all headless-validated
-    (tools/verify_run.gd) + clean boot. (4) Iterated game-feel over builds 2->7 to a CONNECTED
-    hit loop: glow render-path fix (ship/enemies via MultiMesh/additive HDR, NOT draw_* which
-    never blooms), then PER-IMPACT DAMAGE (bullets consumed on contact deal the damage) + death
-    bursts -> shoot->impact->destroy confirmed on device. (5) Gotchas: ship-over-SSH needs
-    keychain unlock + set-key-partition-list (build #2 failed errSecInternalComponent without
-    it); main scene can't use bare class_name (no import cache) -> preload().
-  previous_notes: >
-    Session 6. (1) iOS TOOLCHAIN UNBLOCKED + #47 SHIPPED. The session-5 plan (mini -> macOS
-    Tahoe) was impossible (Tahoe drops the 2018 mini) AND unnecessary: Xcode 26's floor is
-    Sequoia 15.6 (mini runs 15.7.7) and Apple ships a Universal Xcode 26 .xip with an x86_64
-    slice. Installed Xcode 26.6 RC2 side-by-side with 16.4 (NO OS upgrade), -downloadPlatform
-    iOS for the iOS 26.5 SDK. The MTLTensorDomain/CADynamicRange link error is gone. (2) Signing
-    reconciled (rename debt): make_profile for com.scottdix.neonsplice, fixed exportOptions,
-    re-exported the stale Godot project -> neon_splice.xcodeproj, baked manual-signing xcargs
-    into the Fastfile ship lane (beats Godot's Automatic-vs-Distribution conflict). (3) `fastlane
-    ios ship` ran end-to-end -> FIRST BUILD ON TESTFLIGHT (ASC app id 6782516475). (4) Confirmed
-    ../virtus-focus unaffected (Expo/EAS cloud, no local Xcode). (5) Docs corrected (CLAUDE.md,
-    SESSION-005), 16.4 flagged for removal after on-device test. Glow/FPS still need a real device
-    (now reachable via TestFlight).
+    FPS 59-60 on the iPhone 12 Pro. (3) BUILT THE MVP GAMEPLAY SLICE (#9/#10/#52, partial #14):
+    new GameState autoload (#2), Events-bus extensions, new Run main scene = analog slide-steer +
+    always-on MultiMesh fire stream + shootable exploding targets + HUD. (4) Iterated game-feel
+    over builds 2->7 to a CONNECTED hit loop: glow render-path fix (MultiMesh/additive HDR, NOT
+    draw_* which never blooms), PER-IMPACT DAMAGE + death bursts. (5) Gotchas: ship-over-SSH needs
+    keychain unlock + set-key-partition-list; main scene can't use bare class_name -> preload().
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
 # =============================================================================
 focus:
-  active_milestone: "v0.1.0 - Proof of Concept"
-  active_epic: "#1 — Phase 1-2: Foundation & Project Architecture"
-  current_issue: "#11/#56 ± gates on stream volume + #55 Glow Battery + #51 finite level / finish line (rest of v0.2.0 core loop)"
-  next_issue: "#53 enemy faction (real enemy types/behaviours) + #14 collision hardening as bullet counts scale"
+  active_milestone: "v0.2.0 - Playable Prototype"
+  active_epic: "#53 — Entropy enemy faction (enemies + collision)"
+  current_issue: "#53 enemy faction (real enemy types/behaviours) + #14 collision hardening as bullet counts scale"
+  next_issue: "#13 segment-driven spawner (place gate/enemy formations by world-x along the track) + #54 batched projectile→enemy collision/damage layer (D3)"
   notes: >
-    Session 7 DONE: #6 POC device-validated (glow + 60fps on iPhone 12 Pro); MVP slice shipped
-    (#9 analog steer, #10/#52 always-on fire, partial #14) and feels good on device — see SESSION-007.
-    Run scene (res://assets/levels/run.tscn) is the main scene; GameState autoload added (#2).
-    Gates (#11/#56) mutate GameState.projectile_count (ALREADY wired to fleet fire volume), so the
-    plumbing exists — gates just call GameState.add_projectiles(+/-N). #55 Glow Battery = a 0-100
-    bar that drains on hazard/negative-gate, loss at 0. #51 finish line = finite distance + "RUN
-    COMPLETE". REVIEW FLAG: damage model is now per-bullet-impact, NOT the locked D3 beam emitter
-    (kept D3's perf intent; live bullets bounded ~140). Sanity-check before enemy/tier work scales
-    counts. iOS ship over SSH: unlock keychain + set-key-partition-list first (see SESSION-007).
-    TODO still open: remove Xcode-16.4.0.app (device test now passed, so it's safe to drop).
+    Session 8 DONE: v0.2.0 core loop COMPLETE + device-validated on TestFlight build #10 (#51
+    finish line, #11/#56 gates, #55 Glow Battery) — see SESSION-008. Main scene res://assets/levels/run.tscn.
+    NEXT (#53/#14): enemies are placeholder shootable diamonds in assets/obstacles/targets.gd — give
+    them real archetypes/behaviour; verify collision stays cheap as fire volume scales (live bullets
+    bounded ~140). FOLD IN the code-review fix while here: move the gate effect out of GateSpawner
+    (it calls GameState.set_projectile_count + drain_battery directly) into a GameState handler for
+    Events.gate_passed (CLAUDE.md decoupling), and clamp the gate_passed new_count. GateSpawner
+    formations are HARDCODED (MVP) — #13 makes the real segment-driven spawner that places them by
+    world-x; #54 is the batched D3 collision/damage layer (revisit the per-impact damage deviation).
+    OPS: build #10 awaiting external Beta App Review (Patrick auto-notified on approval); next ship
+    is build #11 (#9 is dead). New Fastfile lanes: status/testers/add_tester/beta_diag/beta_submit;
+    final external "Submit for Review" must be done in ASC web UI (fastlane beta_submit metadata-only).
+    Still open: remove Xcode-16.4.0.app (safe to drop — device tests passed).
 
 # =============================================================================
 # TRACKER

@@ -32,11 +32,28 @@ signal enemy_destroyed(at: Vector2, points: int)
 signal gate_passed(gate_type: String, value: float, new_count: int)
 signal gate_spawned(gate: Node2D)
 
+# --- Glow Battery (health / loss) --------------------------------------------
+## Health = the Glow Battery (#55, §4.6). Re-emitted by GameState whenever it
+## changes; the HUD bar reacts. `value`/`max_value` are in 0..max.
+signal glow_battery_changed(value: float, max_value: float)
+## Battery hit 0 — the grid collapses to a dead state. LOSS terminal (→ Results,
+## loss path). Distinct from run_completed (the WIN, finish-line crossing).
+signal grid_collapsed
+
+# --- Level / distance --------------------------------------------------------
+## Finite-level progress (D2/§4.5). Re-emitted by GameState each run tick:
+## `distance` is metres travelled, `progress` is 0..1 toward the finish line.
+## HUD + the scrolling FINISH bar react to this; nothing polls GameState.
+signal distance_changed(distance: float, progress: float)
+
 # --- Game flow ---------------------------------------------------------------
 signal game_started
 signal game_paused
 signal game_resumed
 signal game_over(final_score: int)
+## WIN terminal (#51): the ship crossed the finish line. Triggers the
+## "RUN COMPLETE" / Results screen (#44). Loss path (Glow Battery 0) is #55.
+signal run_completed(final_score: int, distance: float)
 
 # --- Scoring -----------------------------------------------------------------
 signal score_changed(new_score: int)

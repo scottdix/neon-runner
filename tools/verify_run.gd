@@ -136,6 +136,184 @@ func _initialize() -> void:
 		lines.append("targets OK: in-stream killed + scored, off-stream safe")
 	tg.free(); fl.free()
 
+	# 9) Finite level / finish line (#51): the LevelDef + .tres load, start_run seeds
+	#    distance 0, tick_run integrates distance and fires distance_changed, and
+	#    crossing length trips the WIN (run_completed, run_active=false, run_won).
+	var LevelS: GDScript = load("res://resources/level_def.gd")
+	var lvl_tres: Resource = load("res://data/level_01.tres")
+	lines.append("level load: script=%s  level_01.tres=%s" % [
+		LevelS != null, lvl_tres != null])
+	if LevelS == null or lvl_tres == null:
+		lines.append("level FAIL: LevelDef/.tres did not load"); ok = false
+
+	# Capture the bus signals via a by-reference Array (lambdas can't rebind locals).
+	var ev_auto: Object = root.get_node_or_null("Events")
+	var seen := [0, false, 0.0]   # [distance_changed count, run_completed?, final distance]
+	ev_auto.connect("distance_changed", func(_d, _p): seen[0] += 1)
+	ev_auto.connect("run_completed", func(_s, d): seen[1] = true; seen[2] = d)
+
+	gs.call("start_run")
+	var d0: float = gs.get("distance")
+	var len_m: float = gs.get("active_level").length_m
+	var dist_mid := 0.0
+	for i in 6000:                       # bounded; 320 m / 8 mps = 40 s = 2400 frames
+		gs.call("tick_run", 1.0 / 60.0)
+		if i == 600:
+			dist_mid = gs.get("distance")
+		if not gs.get("run_active"):
+			break
+	var d_final: float = gs.get("distance")
+	var won: bool = gs.get("run_won")
+	var still_active: bool = gs.get("run_active")
+	lines.append("finite-level: start_dist=%.1f mid_dist=%.1f final_dist=%.1f len=%.0f won=%s active=%s dist_emits=%d completed=%s" % [
+		d0, dist_mid, d_final, len_m, won, still_active, seen[0], seen[1]])
+	if d0 != 0.0:
+		lines.append("distance FAIL: start_run did not reset distance to 0"); ok = false
+	if dist_mid <= 0.0:
+		lines.append("scroll FAIL: distance did not accumulate while running"); ok = false
+	if seen[0] < 2:
+		lines.append("signal FAIL: distance_changed did not fire per tick"); ok = false
+	if not seen[1] or not won or still_active:
+		lines.append("win FAIL: crossing the finish line did not complete the run"); ok = false
+	if absf(d_final - len_m) > 0.001:
+		lines.append("clamp FAIL: final distance %.2f not pinned to finish %.0f" % [d_final, len_m]); ok = false
+	# tick_run after completion is a no-op (no further distance / double-win).
+	var emits_before: int = seen[0]
+	gs.call("tick_run", 1.0 / 60.0)
+	if gs.get("distance") != d_final or seen[0] != emits_before:
+		lines.append("post-win FAIL: tick_run advanced after the run ended"); ok = false
+	else:
+		lines.append("finite-level OK: distance scrolls, finish wins, post-win is inert")
+
+	# Finish-line visual parses + connects to the bus without a GPU.
+	var FinishS: GDScript = load("res://assets/levels/finish_line.gd")
+	if FinishS == null:
+		lines.append("finish-line FAIL: finish_line.gd did not load"); ok = false
+	else:
+		lines.append("finish-line OK: finish_line.gd loads")
+
+	# 10) Gates (#11/#56): math ops + display text + single-trigger, and the spawner
+	#     fires the gate the SHIP'S X picks at the crossing line, mutating the swarm.
+	var GateS: GDScript = load("res://assets/gates/gate.gd")
+	var SpawnerS: GDScript = load("res://assets/gates/gate_spawner.gd")
+	var TrackS: GDScript = load("res://assets/levels/track.gd")
+	lines.append("gate load: gate=%s spawner=%s track=%s" % [
+		GateS != null, SpawnerS != null, TrackS != null])
+	if GateS == null or SpawnerS == null or TrackS == null:
+		lines.append("gate FAIL: gate/spawner/track scripts did not load"); ok = false
+		lines.append("RESULT=FAIL"); _write(lines); return
+
+	var O = GateS.Operation
+	# apply() across all four ops on a base count of 10.
+	var cases := [[O.ADD, 8.0, 18, "+8"], [O.SUBTRACT, 5.0, 5, "-5"],
+		[O.MULTIPLY, 2.0, 20, "×2"], [O.DIVIDE, 2.0, 5, "÷2"]]
+	var math_ok := true
+	for c in cases:
+		var g: Node2D = GateS.new()
+		g.call("configure", c[0], c[1], 0.0, 540.0, 270.0)
+		var got: int = g.call("apply", 10)
+		var txt: String = g.call("get_display_text")
+		if got != c[2] or txt != c[3]:
+			lines.append("gate-math FAIL: op=%d apply(10)=%d (want %d), text=%s (want %s)" % [
+				c[0], got, c[2], txt, c[3]]); math_ok = false; ok = false
+		g.free()
+	if math_ok:
+		lines.append("gate-math OK: +8/-5/×2/÷2 apply + display correct")
+
+	# Single-trigger: trigger() emits gate_passed once, flips has_been_triggered,
+	# and a second trigger is a no-op.
+	var gp := [0]
+	ev_auto.connect("gate_passed", func(_t, _v, _n): gp[0] += 1)
+	var gt: Node2D = GateS.new()
+	gt.call("configure", O.MULTIPLY, 2.0, 0.0, 540.0, 270.0)
+	var first: int = gt.call("trigger", 10)
+	var was_flagged: bool = gt.get("has_been_triggered")
+	var second: int = gt.call("trigger", 10)
+	lines.append("gate-trigger: first=%d second=%d flagged=%s emits=%d" % [
+		first, second, was_flagged, gp[0]])
+	if first != 20 or not was_flagged or second != 10 or gp[0] != 1:
+		lines.append("gate-trigger FAIL: re-trigger not idempotent / no emit"); ok = false
+	else:
+		lines.append("gate-trigger OK: fires once, emits gate_passed, then inert")
+	gt.free()
+
+	# TrackView: an object authored at track_m sits exactly on the trigger line
+	# when distance == track_m (the crossing condition the spawner keys on).
+	var y_at: float = TrackS.screen_y(135.0, 135.0, 1680.0)
+	if absf(y_at - 1680.0) > 0.001:
+		lines.append("track FAIL: screen_y at distance==track_m = %.1f (want 1680)" % y_at); ok = false
+	else:
+		lines.append("track OK: track_m maps onto the trigger line at its distance")
+
+	# Spawner: steer LEFT into formation 1 (×2) then RIGHT into formation 2's right
+	# gate (-5). Volume: 20 ->(×2) 40 ->(-5) 35; the unchosen gates never fire.
+	var sp: Node2D = SpawnerS.new()
+	sp.call("setup", 1680.0)
+	sp.call("build_formations")
+	gs.call("start_run")                         # reseed projectile_count = 20
+	sp.call("update", 45.0, 200.0)               # formation @45m crossing, ship on the left
+	var after_left: int = gs.get("projectile_count")
+	sp.call("update", 90.0, 900.0)               # formation @90m crossing, ship on the right
+	var after_right: int = gs.get("projectile_count")
+	var trig: int = sp.get("triggers")
+	lines.append("spawner: vol 20 ->%d (left ×2) ->%d (right -5), triggers=%d" % [
+		after_left, after_right, trig])
+	if after_left != 40 or after_right != 35 or trig != 2:
+		lines.append("spawner FAIL: wrong gate fired / volume not mutated by ship_x"); ok = false
+	else:
+		lines.append("spawner OK: ship_x picks the gate; swarm volume reacts")
+	sp.free()
+
+	# 11) Glow Battery (#55): start_run charges it to max + emits; drain announces
+	#     and clamps; emptying it FAILS the run (run_won=false, grid_collapsed);
+	#     and a negative gate drains the battery while a positive one does not.
+	var bat := [0, false]            # [glow_battery_changed count, grid_collapsed?]
+	ev_auto.connect("glow_battery_changed", func(_v, _m): bat[0] += 1)
+	ev_auto.connect("grid_collapsed", func(): bat[1] = true)
+
+	gs.call("start_run")
+	var bat_full: float = gs.get("glow_battery")
+	var bat_max := 100.0             # GameState.MAX_GLOW_BATTERY (consts aren't get()-able)
+	gs.call("drain_battery", 30.0)
+	var bat_after: float = gs.get("glow_battery")
+	gs.call("drain_battery", 9999.0)           # empty it -> loss
+	var bat_zero: float = gs.get("glow_battery")
+	var failed_active: bool = gs.get("run_active")
+	var failed_won: bool = gs.get("run_won")
+	lines.append("battery: full=%.0f/%.0f drain30->%.0f empty->%.0f active=%s won=%s emits=%d collapsed=%s" % [
+		bat_full, bat_max, bat_after, bat_zero, failed_active, failed_won, bat[0], bat[1]])
+	if bat_full != bat_max or bat_after != bat_max - 30.0:
+		lines.append("battery FAIL: start did not charge to max / drain wrong"); ok = false
+	if bat_zero != 0.0 or failed_active or failed_won or not bat[1]:
+		lines.append("battery FAIL: emptying did not fail the run / collapse the grid"); ok = false
+	if bat[0] < 3:                              # start + 2 drains
+		lines.append("battery FAIL: glow_battery_changed not emitted on changes"); ok = false
+	# Drain after the loss is inert (no further emit / negative battery).
+	var emits_pre: int = bat[0]
+	gs.call("drain_battery", 10.0)
+	if gs.get("glow_battery") != 0.0 or bat[0] != emits_pre:
+		lines.append("battery FAIL: drain advanced after the run ended"); ok = false
+	else:
+		lines.append("battery OK: charge/drain/emit + loss-at-0 + inert post-loss")
+
+	# Negative gate drains the battery; positive gate leaves it full.
+	var sp2: Node2D = SpawnerS.new()
+	sp2.call("setup", 1680.0)
+	sp2.call("build_formations")
+	gs.call("start_run")                        # battery -> 100, vol -> 20
+	sp2.call("update", 45.0, 200.0)             # @45m left = ×2 (positive): vol 40, bat 100
+	var bat_pos: float = gs.get("glow_battery")
+	sp2.call("update", 90.0, 900.0)             # @90m right = -5 (negative): vol 35, bat drains
+	var bat_neg: float = gs.get("glow_battery")
+	var vol_neg: int = gs.get("projectile_count")
+	lines.append("gate-drain: after +gate bat=%.0f, after -gate bat=%.0f vol=%d" % [
+		bat_pos, bat_neg, vol_neg])
+	if bat_pos != 100.0 or bat_neg != 75.0 or vol_neg != 35:
+		lines.append("gate-drain FAIL: negative gate did not drain (or positive did)"); ok = false
+	else:
+		lines.append("gate-drain OK: −/÷ gate costs battery, +/× gate does not")
+	sp2.free()
+
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write(lines)
 
