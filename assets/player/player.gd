@@ -26,6 +26,48 @@ var _max_x: float = 1000.0
 ## The ship's MultiMesh instance, kept so the loadout hull colour can be re-applied live.
 var _ship_mesh: MultiMeshInstance2D
 
+# --- Cosmetics: trail (#18) + engine (#67) -----------------------------------
+# Both are delivered through the SAME textured-additive-HDR MultiMesh path the ship
+# and the orb fleet use — the ONLY path Godot's 2D bloom catches. Issue #18 literally
+# says "Line2D", but a Line2D (like any draw_* polyline) NEVER blooms (confirmed on
+# device twice — memory glow-immediate-draw-no-bloom), so the neon trail is instead a
+# MultiMesh ribbon of soft-orb quads. The trail rides a short ring-buffer of recent ship
+# positions; the engine is a tiny additive plume at the tail. All the per-instance
+# layout MATH is in pure methods (_push_trail_point / _trail_layout / _engine_params) so
+# headless tests drive it with no GPU; the MultiMesh nodes only consume that math.
+
+## Trail option indices (mirror Loadout.TRAILS = ["SLEEK","HELIX","RIBBON"]).
+const TRAIL_SLEEK := 0
+const TRAIL_HELIX := 1
+const TRAIL_RIBBON := 2
+## Engine option indices (mirror Loadout.ENGINES = ["STD","PULSAR","WARP"]).
+const ENGINE_STD := 0
+const ENGINE_PULSAR := 1
+const ENGINE_WARP := 2
+
+## How many recent ship samples the trail remembers (oldest = faintest tail).
+const TRAIL_BUFFER := 18
+## Soft-orb quad footprint for one trail dot (re-textured from the orb mask idea).
+const TRAIL_QUAD := 30.0
+const TRAIL_TEX_SIZE := 32
+## How far behind the ship's MESH centre the trail/engine begin (local +y, "behind").
+const TRAIL_BEHIND := 30.0
+## HELIX lateral swing (px) of the two strands; RIBBON broadens this band instead.
+const HELIX_SWING := 26.0
+const RIBBON_SWING := 14.0
+## HELIX winds this many radians across the whole tail.
+const HELIX_WINDS := 6.0
+
+## Ring buffer of recent ship world-positions; head = newest. A plain Array used as a
+## bounded queue (append newest, pop oldest once full) — see `_push_trail_point`.
+var _trail_pts: Array[Vector2] = []
+## The trail ribbon MultiMesh (built in _ready, fed from `_trail_layout`).
+var _trail_mesh: MultiMeshInstance2D
+## The engine-plume MultiMesh (built in _ready, fed from `_engine_params`).
+var _engine_mesh: MultiMeshInstance2D
+## Free-running clock for time-varying engine modes (PULSAR pulse, WARP shimmer).
+var _engine_clock: float = 0.0
+
 
 func _ready() -> void:
 	_design_width = float(ProjectSettings.get_setting(
@@ -35,8 +77,12 @@ func _ready() -> void:
 	if position.x <= 0.0:
 		position.x = _design_width * 0.5
 	_target_x = position.x
+	# Trail and engine sit BEHIND the ship mesh — added first so they draw under it.
+	_build_trail_visual()
+	_build_engine_visual()
 	_build_ship_visual()
-	# Recolour live when the player changes hull in the Garage (CLAUDE.md: bus, no refs).
+	# Recolour/retune live when the player changes hull/trail/engine in the Garage
+	# (CLAUDE.md: bus, no refs).
 	Events.loadout_changed.connect(_on_loadout_changed)
 
 
@@ -73,10 +119,20 @@ func _build_ship_visual() -> void:
 	_ship_mesh = mmi
 
 
-## Re-apply the loadout hull colour to the ship instance when the Garage changes it.
+## Re-apply the loadout cosmetics live when the Garage changes them. Hull recolour
+## (the original contract) PLUS the trail tint and engine plume retune — every axis the
+## Loadout exposes is now reflected in-run without a reference (Events bus only).
 func _on_loadout_changed() -> void:
 	if _ship_mesh != null and _ship_mesh.multimesh != null:
 		_ship_mesh.multimesh.set_instance_color(0, Loadout.hull_color_hdr())
+	# Trail strand count keys off the style, so resize its instance budget on a switch.
+	if _trail_mesh != null and _trail_mesh.multimesh != null:
+		_trail_mesh.multimesh.instance_count = _trail_capacity()
+		_trail_mesh.multimesh.visible_instance_count = 0
+	# Engine plume tint follows the hull glow; size/length come from _engine_params each
+	# frame, so nothing else to rebuild here.
+	if _engine_mesh != null and _engine_mesh.multimesh != null:
+		_engine_mesh.multimesh.set_instance_color(0, Loadout.hull_color_hdr())
 
 
 func _make_ship_texture() -> ImageTexture:
@@ -101,6 +157,98 @@ func _make_ship_texture() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
+# --- Trail + engine rendering (skipped under headless; math above is the truth) ---
+# Both build a soft-orb-textured MultiMesh with an additive material + HDR colour, the
+# only path the bloom catches. They consume _trail_layout() / _engine_params() so the
+# headless-tested math and the on-screen pixels can never disagree.
+
+func _build_trail_visual() -> void:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(TRAIL_QUAD, TRAIL_QUAD)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_2D
+	mm.use_colors = true
+	mm.mesh = quad
+	mm.instance_count = TRAIL_BUFFER * 2          # max budget (HELIX uses both strands)
+	mm.visible_instance_count = 0
+	var mmi := MultiMeshInstance2D.new()
+	mmi.name = "TrailMesh"
+	mmi.multimesh = mm
+	mmi.texture = _make_trail_texture()
+	var mat := CanvasItemMaterial.new()
+	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	mmi.material = mat
+	add_child(mmi)
+	_trail_mesh = mmi
+
+
+func _render_trail() -> void:
+	if _trail_mesh == null or _trail_mesh.multimesh == null:
+		return
+	var mm := _trail_mesh.multimesh
+	var dots: Array = _trail_layout()
+	var n: int = mini(dots.size(), mm.instance_count)
+	mm.visible_instance_count = n
+	# Trail tint = the hull glow, so trail and ship read as one neon vessel.
+	var tint: Color = Loadout.hull_color_hdr()
+	for i in n:
+		var d: Dictionary = dots[i]
+		var s: float = float(d["scale"])
+		# Trail dots live in this node's local space; subtract our origin. Push the dot
+		# BEHIND the ship mesh (local +y) so the trail streams out the tail.
+		var local: Vector2 = (Vector2(d["pos"]) - position) + Vector2(0.0, TRAIL_BEHIND)
+		mm.set_instance_transform_2d(i, Transform2D(Vector2(s, 0), Vector2(0, s), local))
+		mm.set_instance_color(i, tint * float(d["alpha"]))
+
+
+func _make_trail_texture() -> ImageTexture:
+	# Soft radial alpha mask (same idea as the orb mask) — shape is alpha, colour is the
+	# HDR instance tint above, so it blooms.
+	var img := Image.create(TRAIL_TEX_SIZE, TRAIL_TEX_SIZE, false, Image.FORMAT_RGBA8)
+	var c := (TRAIL_TEX_SIZE - 1) * 0.5
+	for y in TRAIL_TEX_SIZE:
+		for x in TRAIL_TEX_SIZE:
+			var dd := Vector2(x - c, y - c).length() / c
+			var a: float = clampf(1.0 - dd, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, a * a))
+	return ImageTexture.create_from_image(img)
+
+
+func _build_engine_visual() -> void:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(TRAIL_QUAD, TRAIL_QUAD)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_2D
+	mm.use_colors = true
+	mm.mesh = quad
+	mm.instance_count = 1
+	mm.visible_instance_count = 1
+	mm.set_instance_color(0, Loadout.hull_color_hdr())
+	var mmi := MultiMeshInstance2D.new()
+	mmi.name = "EngineMesh"
+	mmi.multimesh = mm
+	mmi.texture = _make_trail_texture()           # reuse the soft radial mask
+	var mat := CanvasItemMaterial.new()
+	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	mmi.material = mat
+	add_child(mmi)
+	_engine_mesh = mmi
+
+
+func _render_engine() -> void:
+	if _engine_mesh == null or _engine_mesh.multimesh == null:
+		return
+	var p: Dictionary = _engine_params(Loadout.engine_index, _engine_clock)
+	var mm := _engine_mesh.multimesh
+	# A single stretched quad at the tail, scaled length (local +y) × width (local +x).
+	var sx: float = float(p["width"])
+	var sy: float = float(p["length"])
+	# Anchor so the plume's near edge sits at the tail and it streaks backward (+y).
+	var local := Vector2(0.0, TRAIL_BEHIND + sy * TRAIL_QUAD * 0.5)
+	mm.set_instance_transform_2d(0, Transform2D(Vector2(sx, 0), Vector2(0, sy), local))
+	mm.set_instance_color(0, Loadout.hull_color_hdr() * float(p["alpha"]))
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# Touch drag / press, and (via emulate_touch_from_mouse) desktop mouse.
 	if event is InputEventScreenDrag:
@@ -115,16 +263,129 @@ func _process(delta: float) -> void:
 	if key_axis != 0.0:
 		set_target_x(_target_x + key_axis * key_steer_speed * delta)
 	step(delta)
+	_engine_clock += delta
+	_render_trail()
+	_render_engine()
 
 
 ## Advance the steer one frame. Pure + GPU-free so headless tests can call it
 ## directly. Lerp is exponential-smoothed so it's identical at any frame rate.
+## Also samples the post-move position into the trail ring-buffer (pure), so the
+## trail follows even when driven headless.
 func step(delta: float) -> void:
 	var t: float = 1.0 - pow(0.0001, delta * (steer_responsiveness / 12.0))
 	position.x = lerpf(position.x, clampf(_target_x, _min_x, _max_x), t)
 	var span: float = maxf(1.0, _max_x - _min_x)
 	var x_norm: float = clampf((position.x - _min_x) / span, 0.0, 1.0)
+	_push_trail_point(position)
 	Events.player_steered.emit(position.x, x_norm)
+
+
+# --- Trail cosmetics (#18) — PURE math, no GPU --------------------------------
+
+## Push the newest ship position onto the trail ring-buffer (head). Once the buffer is
+## full it drops the OLDEST sample, so it behaves as a fixed-length recent-path queue.
+## Pure + GPU-free: headless tests call this and assert the buffer fills then caps.
+func _push_trail_point(p: Vector2) -> void:
+	_trail_pts.push_front(p)
+	while _trail_pts.size() > TRAIL_BUFFER:
+		_trail_pts.pop_back()
+
+
+## How many MultiMesh instances the current trail style needs. HELIX renders TWO strands
+## (offset on a sine), so it doubles the instance budget; SLEEK/RIBBON are one strand.
+func _trail_capacity() -> int:
+	if Loadout.trail_index == TRAIL_HELIX:
+		return TRAIL_BUFFER * 2
+	return TRAIL_BUFFER
+
+
+## Lay the ring-buffer out into render dots: a list of {pos, scale, alpha}. The newest
+## sample (head) is brightest/biggest; older samples fade and shrink monotonically toward
+## the tail. The pattern varies by Loadout.trail_index:
+##   SLEEK  = one tight strand centred on the path.
+##   HELIX  = two strands swung left/right on a sine wave (a lateral offset SLEEK lacks).
+##   RIBBON = one strand swung in a wider, slower band with bigger dots (fewer, fatter).
+## Pure + GPU-free; this is the single source of truth the renderer consumes AND the
+## headless test asserts on (count, monotonic fade, per-style offset).
+func _trail_layout() -> Array:
+	var out: Array = []
+	var n: int = _trail_pts.size()
+	if n == 0:
+		return out
+	var style: int = Loadout.trail_index
+	for i in n:
+		# age 0 at the head (newest), -> 1 at the oldest tail sample.
+		var age: float = float(i) / float(maxi(1, TRAIL_BUFFER - 1))
+		var fade: float = clampf(1.0 - age, 0.0, 1.0)
+		var base: Vector2 = _trail_pts[i]
+		match style:
+			TRAIL_HELIX:
+				# Two counter-phase strands winding down the tail; lateral swing decays
+				# with fade so the braid tucks into the ship.
+				var ph: float = age * HELIX_WINDS
+				var off: float = sin(ph) * HELIX_SWING * fade
+				out.append({
+					"pos": base + Vector2(off, 0.0),
+					"scale": 0.5 + fade * 0.7,
+					"alpha": fade * fade,
+				})
+				out.append({
+					"pos": base + Vector2(-off, 0.0),
+					"scale": 0.5 + fade * 0.7,
+					"alpha": fade * fade,
+				})
+			TRAIL_RIBBON:
+				# A wider, slower band of fatter dots (a fatter trail, fewer winds).
+				var roff: float = sin(age * 2.0) * RIBBON_SWING * fade
+				out.append({
+					"pos": base + Vector2(roff, 0.0),
+					"scale": 1.2 + fade * 1.1,
+					"alpha": fade * fade * 0.9,
+				})
+			_:
+				# SLEEK: one tight strand dead-centre on the recorded path.
+				out.append({
+					"pos": base,
+					"scale": 0.7 + fade * 0.8,
+					"alpha": fade * fade,
+				})
+	return out
+
+
+# --- Engine cosmetics (#67) — PURE math, no GPU -------------------------------
+
+## Engine plume parameters for the current engine + clock: {length, width, alpha}, in
+## local units measured BEHIND the ship tail. Pure + GPU-free so headless tests assert it.
+##   STD    = a modest steady plume (constant).
+##   PULSAR = the plume size oscillates over `time` (a visible pulse).
+##   WARP   = an elongated streak (long, thin) with a faint time shimmer.
+## `time` is passed explicitly (not read from _engine_clock) so the test is deterministic.
+func _engine_params(engine_index: int, time: float) -> Dictionary:
+	match engine_index:
+		ENGINE_PULSAR:
+			# Oscillate length+width together so the plume visibly pulses.
+			var pulse: float = 0.5 + 0.5 * sin(time * 9.0)
+			return {
+				"length": 1.0 + pulse * 1.0,
+				"width": 0.8 + pulse * 0.5,
+				"alpha": 0.7 + pulse * 0.3,
+			}
+		ENGINE_WARP:
+			# Long thin streak; small shimmer keeps it alive without pulsing in size much.
+			var shimmer: float = 0.92 + 0.08 * sin(time * 16.0)
+			return {
+				"length": 3.4 * shimmer,
+				"width": 0.55,
+				"alpha": 0.85,
+			}
+		_:
+			# STD: a steady, modest plume — no time dependence.
+			return {
+				"length": 1.3,
+				"width": 1.0,
+				"alpha": 0.8,
+			}
 
 
 ## Request a new steer target; always clamped to the steerable width.

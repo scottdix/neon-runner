@@ -121,6 +121,67 @@ func active_output_name() -> String:
 	return active_output.get("name", BASE_INPUT)
 
 
+## Structured, NUMERIC view of the equipped splice for a RUN to consume (#68). `active_output`
+## carries a DISPLAY string ("10 SHOTS · x2 RATE") for the screen; this is the machine-readable
+## twin the fleet reads at run start to scale its fire-rate / spread / projectile-speed and seed
+## starting projectiles. Returns a Dictionary with these keys, always present:
+##   • rate_mult                — fire-rate multiplier (1.0 = today's behaviour)
+##   • spread_mult              — stream-spread multiplier (1.0 = unchanged)
+##   • speed_mult               — projectile-speed multiplier (1.0 = unchanged)
+##   • start_projectiles_bonus  — flat bullets added to the starting swarm (0 = none)
+##
+## NEUTRAL default ({1.0, 1.0, 1.0, 0}) whenever nothing is spliced or a slot is empty, so a
+## fresh run with no Splice Lab interaction behaves EXACTLY as before (verify_combat invariant).
+## Folding: each equipped mod contributes by its `stat`. Slot A's magnitude scales slot B (the
+## same A-scales-B rule the display fusion uses), so the FUSED magnitude (a.mag × b.mag) is what
+## actually lands on slot B's stat; slot A also applies its own magnitude to ITS stat. An "x"
+## op is multiplicative (folds into the *_mult), a "+" op is additive (RATE/SPEED fold a
+## fractional boost, SHOTS folds the flat count).
+func active_modifiers() -> Dictionary:
+	var fx := {
+		"rate_mult": 1.0,
+		"spread_mult": 1.0,
+		"speed_mult": 1.0,
+		"start_projectiles_bonus": 0,
+	}
+	if not can_splice():
+		return fx
+	var a: SpliceMod = inventory[slot_a]
+	var b: SpliceMod = inventory[slot_b]
+	# Slot B is the "scaled" stat: slot A's magnitude amplifies it (fused = a.mag × b.mag).
+	_fold_mod(fx, b.op, b.stat, a.magnitude * b.magnitude)
+	# Slot A also lands its own raw effect on its own stat.
+	_fold_mod(fx, a.op, a.stat, a.magnitude)
+	return fx
+
+
+## Apply one mod's numeric effect into the accumulating `fx` dict. `op` "x*" is multiplicative
+## (scales the matching *_mult), "+*" is additive. Stat routing:
+##   RATE  -> rate_mult     SPEED -> speed_mult     SHOTS -> start_projectiles_bonus (+ spread)
+## A larger SHOTS swarm also widens visually, so an additive SHOTS nudges spread_mult a touch;
+## an "x" SHOTS scales the flat bonus off a baseline so a fresh swarm still gets a sane count.
+func _fold_mod(fx: Dictionary, op: String, stat: String, mag: float) -> void:
+	var is_mult: bool = op.begins_with("x") or op.begins_with("X") or op.begins_with("*")
+	match stat:
+		"RATE":
+			if is_mult:
+				fx["rate_mult"] = float(fx["rate_mult"]) * mag
+			else:
+				fx["rate_mult"] = float(fx["rate_mult"]) + mag * 0.1
+		"SPEED":
+			if is_mult:
+				fx["speed_mult"] = float(fx["speed_mult"]) * mag
+			else:
+				fx["speed_mult"] = float(fx["speed_mult"]) + mag * 0.1
+		"SHOTS":
+			if is_mult:
+				fx["start_projectiles_bonus"] = int(fx["start_projectiles_bonus"]) + int(mag)
+			else:
+				fx["start_projectiles_bonus"] = int(fx["start_projectiles_bonus"]) + int(mag)
+			# A denser starting swarm also reads a little wider.
+			fx["spread_mult"] = float(fx["spread_mult"]) + 0.02 * mag
+
+
 ## Restore slot_a/slot_b from the ConfigFile. Indices are validated against the seeded
 ## inventory and reset to -1 if stale (e.g. inventory shrank between builds).
 func load_splice() -> void:

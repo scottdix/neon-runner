@@ -19,6 +19,7 @@ const TARGETS_SCRIPT := preload("res://assets/obstacles/targets.gd")
 const FINISH_LINE_SCRIPT := preload("res://assets/levels/finish_line.gd")
 const GATE_SPAWNER_SCRIPT := preload("res://assets/gates/gate_spawner.gd")
 const GRID_FLOOR_SCRIPT := preload("res://assets/levels/grid_floor.gd")
+const EFFECT_LAYER_SCRIPT := preload("res://assets/effects/effect_layer.gd")
 const PAUSE_SCRIPT := preload("res://assets/ui/pause.gd")
 const UI := preload("res://assets/ui/ui_kit.gd")
 
@@ -28,6 +29,7 @@ var _targets: Node2D
 var _finish_line: Node2D
 var _gates: Node2D
 var _grid: Node2D
+var _effects: Node2D
 var _env: Environment
 var _score_value: Label
 var _combo_value: Label
@@ -94,6 +96,15 @@ func _ready() -> void:
 	_finish_line = FINISH_LINE_SCRIPT.new()
 	_finish_line.name = "FinishLine"
 	add_child(_finish_line)
+
+	# GPU-particle effects layer (#19 kill explosions / #20 gate collect+decimate bursts).
+	# Self-connects to the bus; added LAST among the world entities so bursts read over the
+	# swarm. gate_passed carries no position, so feed it the ship-line y — gate crossings
+	# happen there and it tracks ship x off player_steered.
+	_effects = EFFECT_LAYER_SCRIPT.new()
+	_effects.name = "Effects"
+	add_child(_effects)
+	_effects.set_crossing_y(ship_pos.y)
 
 	_build_hud()
 	# Run no longer reacts to the run terminals — SceneManager listens for run_completed /

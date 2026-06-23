@@ -12,6 +12,16 @@ render_mode blend_add, unshaded;
 //
 // NOTE: glow + warp are unproven on this dev box (Intel UHD 630 can't compile Godot's
 // glow pipelines under MoltenVK) — must be confirmed on the iPhone (#47/#54).
+//
+// #16/#17: the single transient ripple is now an ARRAY of up to MAX_RIPPLES=8 that the
+// fragment sums, so several kills/breaches in flight ring at once; each slot carries an
+// IMPLOSION flag (ripple_implode[i] != 0 → the radial push pulls INWARD, for divide/
+// breach) and a recent-action COLOR-SHIFT tints the whole grid toward the gate's hue.
+
+// MUST stay in lockstep with GridFloor.MAX_RIPPLES — the GDScript pushes exactly this
+// many slots into the uniform arrays each frame. GLSL ES needs a compile-time size, so
+// it lives here as a literal; the comment is the contract.
+const int MAX_RIPPLES = 8;
 
 uniform vec2 resolution = vec2(1080.0, 1920.0);
 uniform float cell_size = 96.0;       // grid cell edge in px
@@ -24,11 +34,21 @@ uniform float intensity = 0.35;       // overall line brightness (the "~13% fain
 uniform float warp_amp = 7.0;         // px
 uniform float warp_speed = 1.0;
 
-// Transient ripple, poked by Events.trigger_grid_ripple (radial push from a point).
-uniform vec2 ripple_center = vec2(540.0, 1680.0);
-uniform float ripple_radius = 0.0;    // current ring radius in px (expands over its life)
-uniform float ripple_strength = 0.0;  // px displacement at the ring (decays to 0)
-uniform float ripple_width = 120.0;   // ring falloff width in px
+// Transient ripple ARRAY, poked by Events.trigger_grid_ripple (radial push from a point).
+// A slot is INACTIVE when its ripple_strength is 0; GridFloor zeroes freed slots. Width
+// stays a single shared falloff (all rings share the same ring profile — cheaper, and the
+// look is identical). The SIGN/flag for implosion is carried out-of-band in ripple_implode
+// rather than the strength sign so strength==0 unambiguously means "inactive".
+uniform vec2 ripple_center[MAX_RIPPLES];
+uniform float ripple_radius[MAX_RIPPLES];    // current ring radius in px (expands over life)
+uniform float ripple_strength[MAX_RIPPLES];  // px displacement at the ring (0 == inactive)
+uniform float ripple_implode[MAX_RIPPLES];   // 0 = outward push, !=0 = inward PULL (#17)
+uniform float ripple_width = 120.0;          // shared ring falloff width in px
+
+// Color-shift by recent action (#17). GridFloor sets shift_color to the last gate's hue
+// (Palette.GATE_MULTIPLY/GATE_ADD/GATE_NEGATIVE) and decays shift_amount → 0 over ~0.6s.
+uniform vec4 shift_color : source_color = vec4(0.3, 0.3, 3.8, 1.0);  // HDR, blooms like the grid
+uniform float shift_amount = 0.0;     // 0 = pure grid_color, 1 = full shift_color
 
 // Distance (px) from coordinate `c` (in cells) to the nearest integer grid line,
 // expressed back in px, turned into a soft line mask.
@@ -45,16 +65,24 @@ void fragment() {
 	float t = TIME * warp_speed;
 	vec2 warp = vec2(sin(px.y * 0.012 + t * 1.3), sin(px.x * 0.012 + t * 1.1)) * warp_amp;
 
-	// Transient radial ripple displacement around the impact point.
-	vec2 dvec = px - ripple_center;
-	float dist = length(dvec) + 0.0001;
-	float ring = ripple_strength * exp(-pow((dist - ripple_radius) / max(ripple_width, 1.0), 2.0));
-	warp += (dvec / dist) * ring;
+	// Transient radial ripples — SUM every active slot's displacement around its impact
+	// point. An inactive slot (strength 0) contributes nothing (ring scales by strength),
+	// so the loop is branch-free. ripple_implode flips the push to a PULL (toward centre).
+	for (int i = 0; i < MAX_RIPPLES; i++) {
+		vec2 dvec = px - ripple_center[i];
+		float dist = length(dvec) + 0.0001;
+		float ring = ripple_strength[i] * exp(-pow((dist - ripple_radius[i]) / max(ripple_width, 1.0), 2.0));
+		float dir = (ripple_implode[i] != 0.0) ? -1.0 : 1.0;   // implosion pulls inward
+		warp += (dvec / dist) * ring * dir;
+	}
 
 	vec2 p = px + warp;
 	float gx = p.x / cell_size;
 	float gy = p.y / cell_size + scroll;       // scroll moves lines downward toward the ship
 
 	float line = max(line_mask(gx), line_mask(gy));
-	COLOR = vec4(grid_color.rgb, line * intensity);
+
+	// Color-shift: lerp the grid hue toward the recent action's colour (still HDR → blooms).
+	vec3 col = mix(grid_color.rgb, shift_color.rgb, clamp(shift_amount, 0.0, 1.0));
+	COLOR = vec4(col, line * intensity);
 }
