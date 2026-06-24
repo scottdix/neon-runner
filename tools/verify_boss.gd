@@ -34,6 +34,13 @@ func _initialize() -> void:
 	var gs: Node = root.get_node_or_null("GameState")
 	if ev == null or gs == null:
 		lines.append("RESULT=FAIL (autoloads missing)"); _write(lines); return
+	# GameState.Stance enum values (SPRAY=0, LANCE=1 by contract) — bare `GameState` doesn't compile
+	# in the -s main tool script (use the literals, mirroring verify_stance.gd).
+	var GS_SPRAY := 0
+	var GS_LANCE := 1
+	# GameState.wire_events() connects gate_passed -> _on_gate_passed (under -s autoload _ready is
+	# deferred, so the gate-driven stance flip wouldn't fire without this). Idempotent.
+	gs.call("wire_events")
 
 	# ---- 1) Phase ladder + emit-once, driven by HP/time thresholds --------------
 	# Listen to boss_phase_changed; record the ORDER + a count per phase so we can assert each
@@ -325,6 +332,70 @@ func _initialize() -> void:
 		lines.append("5b OK: the ship/muzzle drifts toward the vortex core — the steer inversion is WIRED")
 	fl5.free()
 	sing2.free()
+
+	# ---- 6) PERSISTENT boss-arena STANCE GATES (#82/#83): the only way to switch stance mid-boss.
+	# run.gd injects two parked gates (SPRAY '+' left, LANCE '÷' right) the player steers through. They
+	# RE-ARM as the ship leaves + re-enters, so the player flips stance freely all fight. Drive the
+	# spawner's pure update(distance, ship_x) and assert the gate_passed ops flip GameState's stance.
+	var GateSpawnerS: GDScript = load("res://assets/gates/gate_spawner.gd")
+	if GateSpawnerS == null:
+		lines.append("FAIL: gate_spawner.gd missing for boss-stance-gate test"); ok = false
+	else:
+		var gsp: Node2D = GateSpawnerS.new()
+		gsp.call("setup", 1680.0)
+		root.add_child(gsp)                                    # _ready builds _design + connects steer
+		gsp.call("spawn_boss_stance_gates")
+		lines.append("6 boss-gates: count=%d (want 2)" % int(gsp.call("boss_gate_count")))
+		if int(gsp.call("boss_gate_count")) != 2:
+			lines.append("FAIL: spawn_boss_stance_gates did not park exactly 2 gates"); ok = false
+		# Start in SPRAY; steer into the LANCE (right-flank) band → stance must flip to LANCE.
+		gs.call("set_stance", GS_SPRAY)
+		gsp.call("update", 0.0, 940.0)                        # ship at the right flank (LANCE gate band)
+		lines.append("6 after LANCE-flank: stance=%d (want LANCE=%d)" % [int(gs.get("stance")), GS_LANCE])
+		if int(gs.get("stance")) != GS_LANCE:
+			lines.append("FAIL: steering into the right flank did not flip to LANCE"); ok = false
+		# Steer back to centre (out of both bands) so the gates RE-ARM, then into the SPRAY flank → SPRAY.
+		gsp.call("update", 0.0, 540.0)                        # out of both bands (re-arms)
+		gsp.call("update", 0.0, 140.0)                        # ship at the left flank (SPRAY gate band)
+		lines.append("6 after SPRAY-flank: stance=%d (want SPRAY=%d)" % [int(gs.get("stance")), GS_SPRAY])
+		if int(gs.get("stance")) != GS_SPRAY:
+			lines.append("FAIL: steering into the left flank did not flip back to SPRAY (re-arm failed)"); ok = false
+		# And one more round-trip to LANCE proves the gates persist (re-trigger), not a one-shot.
+		gsp.call("update", 0.0, 540.0)
+		gsp.call("update", 0.0, 940.0)
+		if int(gs.get("stance")) != GS_LANCE:
+			lines.append("FAIL: boss stance gates did not persist for a second round-trip"); ok = false
+		else:
+			lines.append("6 OK: parked SPRAY/LANCE gates flip stance both ways + persist for the whole fight")
+		gsp.free()
+
+	# ---- 7) HP RE-TUNE (#82/#83): the Singularity is a TENSE-but-winnable climax, not a 40s sponge.
+	# Assert the new HP is in a sane band, and that a healthy LANCE swarm cracks the ARMORED half
+	# (100%->50%) in a reasonable number of frames once the player switches to LANCE.
+	var sing3: Node2D = SingS.new()
+	lines.append("7 hp-tune: SING_MAX_HP=%.0f" % float(sing3.get("max_hp")))
+	if float(sing3.get("max_hp")) > 6000.0:
+		lines.append("FAIL: Singularity HP still a sponge wall (>6000) after the re-tune"); ok = false
+	if float(sing3.get("max_hp")) < 2000.0:
+		lines.append("FAIL: Singularity HP dropped too low (<2000) — the climax would be trivial"); ok = false
+	# Simulate the ARMORED half with a healthy LANCE swarm: ~12 bullets/frame in the hull at weight 6.
+	sing3.call("arm")
+	sing3.call("step", BossS.TELEGRAPH_TIME + 0.1)            # -> ARMORED
+	var armored_frames := 0
+	while int(sing3.call("current_phase")) == BossS.PHASE_ARMORED and armored_frames < 6000:
+		sing3.call("_apply_hits", 12, FleetS.LANCE_HIT_WEIGHT) # healthy LANCE swarm in the hull
+		sing3.call("step", 1.0 / 60.0)
+		armored_frames += 1
+	var armored_secs: float = armored_frames / 60.0
+	lines.append("7 armored-clear: %d frames (%.1fs) to crack the armored half with LANCE (want <30s)" % [
+		armored_frames, armored_secs])
+	if int(sing3.call("current_phase")) == BossS.PHASE_ARMORED:
+		lines.append("FAIL: a healthy LANCE swarm never cracked the ARMORED half (still spongy)"); ok = false
+	elif armored_secs > 30.0:
+		lines.append("FAIL: the ARMORED phase took >30s with LANCE — still a wall, re-tune more"); ok = false
+	else:
+		lines.append("7 OK: LANCE cracks the armored half in a tense-but-winnable time")
+	sing3.free()
 
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write(lines)

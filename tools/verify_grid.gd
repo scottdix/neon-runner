@@ -171,6 +171,26 @@ func _initialize() -> void:
 	if not (b_mid > 0.0 and b_mid < 1.0) or b_end != 0.0:
 		lines.append("beat FAIL: beat pulse did not decay to 0"); ok = false
 
+	# === 9) SCROLL DIRECTION (#bug): forward travel flows the grid TOP -> BOTTOM ==
+	# The shader samples `gy = p.y/cell_size + scroll`; a POSITIVE scroll slides lines UP
+	# (backward). To read as forward motion (world coming toward the bottom-of-screen ship)
+	# the grid must flow DOWN, so GridFloor must feed a NEGATIVE scroll for POSITIVE distance.
+	# Drive _on_distance_changed against a real material (the only material-touching path here)
+	# and assert the pushed `scroll` uniform is negative + scales with distance.
+	var g7 = GridS.new()
+	var sm2 := ShaderMaterial.new()
+	sm2.shader = load("res://shaders/reactive_grid.gdshader")
+	g7._mat = sm2                                  # inject a material so the flush path runs
+	g7._on_distance_changed(0.0, 0.0)
+	var scroll0: float = float(sm2.get_shader_parameter("scroll"))
+	g7._on_distance_changed(100.0, 0.5)
+	var scroll_fwd: float = float(sm2.get_shader_parameter("scroll"))
+	lines.append("scroll-dir: at d=0 scroll=%.3f, at d=100 scroll=%.3f (want negative -> downward flow)" % [scroll0, scroll_fwd])
+	if not (is_equal_approx(scroll0, 0.0) and scroll_fwd < 0.0):
+		lines.append("scroll-dir FAIL: forward travel must push a NEGATIVE scroll (grid flows TOP->BOTTOM)"); ok = false
+	else:
+		lines.append("scroll-dir OK: forward travel pushes negative scroll -> grid flows top->bottom toward the ship")
+
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write(lines)
 

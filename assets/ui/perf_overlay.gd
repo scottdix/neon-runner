@@ -9,8 +9,12 @@ extends CanvasLayer
 ## DESIGN / GOTCHA notes:
 ##   - The overlay sits on its OWN high CanvasLayer (above the HUD/pause) so it never gets shaken
 ##     or hidden by gameplay; it is a debug surface, not part of the playfield.
-##   - Toggle on/off via a debug action ("perf_overlay" if mapped) or a keycode fallback (F3),
-##     and starts HIDDEN — it must NOT cost anything (no per-frame polling/label rebuild) while off.
+##   - DEVICE PATH (#bug): the overlay mirrors Settings.perf_overlay_enabled — a Settings-screen
+##     toggle a phone can actually press (a keyboard F3 is unreachable on device). It applies that
+##     setting on _ready and reacts to Events.perf_overlay_changed so flipping the switch shows/
+##     hides it live. The keyboard action/F3 stays as a desktop convenience BONUS.
+##   - Starts HIDDEN unless the setting is on — it must NOT cost anything (no per-frame polling/
+##     label rebuild) while off.
 ##   - HEADLESS determinism: every metric→string decision lives in PURE static formatters
 ##     (_fmt_fps / _fmt_mem / _fmt_int / format_panel) that take plain numbers, so the verify
 ##     script asserts the readout text with NO renderer and NO live Performance singleton. _ready
@@ -64,6 +68,12 @@ func _ready() -> void:
 	add_child(_label)
 	visible = false
 	set_process(false)
+	# Mirror the persisted Settings toggle (the device path) + react to it live. The keyboard F3
+	# toggle below stays as a desktop bonus. Guard for the headless verify, which never runs _ready.
+	if Events != null and not Events.perf_overlay_changed.is_connected(set_shown):
+		Events.perf_overlay_changed.connect(set_shown)
+	if Settings != null:
+		set_shown(Settings.perf_overlay_enabled)
 
 
 ## Toggle on a debug action / keycode. Kept in _unhandled_input so it never eats gameplay input

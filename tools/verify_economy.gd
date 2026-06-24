@@ -91,7 +91,7 @@ func _initialize() -> void:
 		lines.append("draft-fold OK: drafted MAGNET -> magnet_radius_mult=%.2f, firing keys unchanged" % float(lab.call("magnet_radius_mult")))
 	lab.call("clear_perks")
 
-	# --- 2) TokenLayer drift + radius-gated absorb -------------------------------
+	# --- 2) TokenLayer drift + REAL magnet attraction + contact absorb -----------
 	# A bare layer (off-tree) reads magnet_mult via the SpliceLab autoload at /root — which is
 	# present here. Clear perks first so the radius is the BASE (×1.0).
 	var layer: Node2D = TokenS.new()
@@ -101,21 +101,62 @@ func _initialize() -> void:
 	# Steer the ship to a known x.
 	ev.call("emit_signal", "player_steered", 540.0, 0.5)
 	var base_r: float = layer.call("magnet_radius")
-	lines.append("token radius: base=%.1f (BASE_PICKUP_RADIUS × magnet_mult 1.0)" % base_r)
+	var contact_r: float = float(layer.get("CONTACT_RADIUS"))
+	lines.append("token radius: magnet=%.1f contact=%.1f (BASE_PICKUP_RADIUS × magnet_mult 1.0; contact < magnet)" % [base_r, contact_r])
+	if not (contact_r < base_r):
+		lines.append("radius FAIL: contact radius must be smaller than the magnet radius (no attraction gap)"); ok = false
 
-	# Drop a token slightly BELOW the ship line but OUTSIDE the radius (so a couple of drift steps
-	# bring it INTO range — proving drift y+ and the radius gate). Place it base_r+40 above the
-	# ship line so it must drift down to be caught.
-	var drop_y := 1680.0 - (base_r + 40.0)
-	ev.call("emit_signal", "token_dropped", Vector2(540.0, drop_y), 3)
-	var start_tokens := int(gs.get("run_tokens"))
-	# One small step: token moves down a little, still outside the radius -> NOT collected.
-	layer.call("step", 0.05)
-	if layer.call("live_count") != 1 or int(gs.get("run_tokens")) != start_tokens:
-		lines.append("absorb FAIL: token absorbed OUTSIDE the magnet radius (auto-collect leak)"); ok = false
+	# 2a) ATTRACTION: a token placed JUST INSIDE the magnet radius (but well outside contact) must
+	# move measurably CLOSER to the ship after one step (the magnet pull), and a token OUTSIDE the
+	# radius must NOT be pulled toward the ship — its horizontal distance to the ship stays put and
+	# it only falls. Use an OFF-AXIS x so a pure down-drift can't be mistaken for attraction.
+	var ship_pt := Vector2(540.0, 1680.0)
+	# Inside the magnet field: offset the token in x so the pull has a horizontal component to read.
+	var inside_pos := Vector2(540.0 + (base_r - 20.0) * 0.7, 1680.0 - (base_r - 20.0) * 0.7)
+	ev.call("emit_signal", "token_dropped", inside_pos, 1)
+	var d_in_before: float = inside_pos.distance_to(ship_pt)
+	layer.call("step", 0.016)
+	# Read the live token's new pos (only one token live).
+	var inside_after: Vector2 = (layer.get("_tokens")[0])["pos"]
+	var d_in_after: float = inside_after.distance_to(ship_pt)
+	lines.append("attract-in: dist %.1f -> %.1f (want closer — homing pull)" % [d_in_before, d_in_after])
+	if not (d_in_after < d_in_before - 1.0):
+		lines.append("attract FAIL: a token inside the magnet radius did not move toward the ship"); ok = false
 	else:
-		lines.append("absorb OK: token outside radius is NOT collected (no auto-collect)")
-	# Now step enough seconds for the token to drift into the radius -> collected exactly once.
+		lines.append("attract OK: in-range token homes toward the ship")
+	# Clear that token off (drift it past the bottom) so the next check starts clean.
+	for s in 60:
+		layer.call("step", 0.05)
+	# Outside the magnet field: drop a token FAR off to the side, just below the ship line so it
+	# won't fall into range. After a step its HORIZONTAL distance to the ship must be unchanged
+	# (no sideways pull) — only y changes from drift.
+	var out_pos := Vector2(540.0 + base_r + 300.0, 1680.0 + 5.0)
+	ev.call("emit_signal", "token_dropped", out_pos, 1)
+	var out_dx_before: float = absf(out_pos.x - ship_pt.x)
+	layer.call("step", 0.016)
+	var out_after: Vector2 = (layer.get("_tokens")[0])["pos"]
+	var out_dx_after: float = absf(out_after.x - ship_pt.x)
+	lines.append("attract-out: |dx| %.1f -> %.1f (want unchanged — no pull outside radius)" % [out_dx_before, out_dx_after])
+	if not is_equal_approx(out_dx_before, out_dx_after):
+		lines.append("attract FAIL: a token OUTSIDE the magnet radius was pulled sideways toward the ship"); ok = false
+	else:
+		lines.append("attract OK: out-of-range token is not pulled (down-drift only)")
+	# Flush that token off the bottom.
+	for s in 80:
+		layer.call("step", 0.05)
+
+	# 2b) NO AUTO-COLLECT outside contact: a token sitting INSIDE the magnet radius but OUTSIDE the
+	# contact radius must NOT bank on the step it enters range — it absorbs only once it homes to
+	# contact. Place it on-axis above the ship at a distance between contact and magnet radius.
+	var mid_y := 1680.0 - (contact_r + (base_r - contact_r) * 0.5)
+	ev.call("emit_signal", "token_dropped", Vector2(540.0, mid_y), 3)
+	var start_tokens := int(gs.get("run_tokens"))
+	layer.call("step", 0.001)   # tiny step: inside magnet radius, but can't reach contact yet
+	if layer.call("live_count") != 1 or int(gs.get("run_tokens")) != start_tokens:
+		lines.append("absorb FAIL: token banked before reaching contact (magnet radius != contact)"); ok = false
+	else:
+		lines.append("absorb OK: in-field token is attracted, not auto-banked before contact")
+	# Now step on so the magnet homes it to contact -> collected exactly once.
 	var collected := [0]
 	var on_collect := func(_at: Vector2, _v: int, _w: int) -> void: collected[0] += 1
 	ev.connect("token_collected", on_collect)
@@ -123,30 +164,43 @@ func _initialize() -> void:
 		layer.call("step", 0.05)
 	ev.disconnect("token_collected", on_collect)
 	if layer.call("live_count") != 0 or collected[0] != 1:
-		lines.append("drift FAIL: token did not drift into radius + collect once (live=%d emits=%d)" % [layer.call("live_count"), collected[0]]); ok = false
+		lines.append("home FAIL: token did not home to contact + collect once (live=%d emits=%d)" % [layer.call("live_count"), collected[0]]); ok = false
 	elif int(gs.get("run_tokens")) != start_tokens + 3:
 		lines.append("collect FAIL: collect_token did not add the value to run_tokens (%d != %d)" % [int(gs.get("run_tokens")), start_tokens + 3]); ok = false
 	else:
-		lines.append("drift+collect OK: token drifted into radius, collected once, run_tokens += 3")
+		lines.append("home+collect OK: token homed to contact, collected once, run_tokens += 3")
 
-	# Magnetism WIDENS the radius: draft the magnet perk and confirm the live radius grows, and a
-	# token at the SAME just-outside distance is now caught on the FIRST step (was not before).
+	# 2c) Magnetism WIDENS the range: draft the magnet perk and confirm the live radius grows, and a
+	# token at a distance that was OUTSIDE the base field is now INSIDE the widened one (so it gets
+	# pulled toward the ship where the base radius left it falling straight down).
 	lab.call("add_perk", magnet)
 	var wide_r: float = layer.call("magnet_radius")
 	if wide_r <= base_r + 0.5:
 		lines.append("magnet FAIL: a drafted MAGNET perk did not widen the pickup radius (%.1f <= %.1f)" % [wide_r, base_r]); ok = false
 	else:
 		lines.append("magnet OK: drafted MAGNET widened radius %.1f -> %.1f" % [base_r, wide_r])
-	# Drop a token at the OLD edge (base_r + 10 above the ship line) — inside the WIDE radius, so
-	# the very first step absorbs it (it would have been outside the base radius).
-	var edge_y := 1680.0 - (base_r + 10.0)
-	var before := int(gs.get("run_tokens"))
-	ev.call("emit_signal", "token_dropped", Vector2(540.0, edge_y), 2)
+	# Drop a token in the band that's OUTSIDE base_r but INSIDE wide_r, off-axis so the pull reads.
+	var gap_r := (base_r + wide_r) * 0.5
+	var gap_pos := Vector2(540.0 + gap_r * 0.7, 1680.0 - gap_r * 0.7)
+	ev.call("emit_signal", "token_dropped", gap_pos, 2)
+	var d_gap_before: float = gap_pos.distance_to(ship_pt)
 	layer.call("step", 0.016)
-	if int(gs.get("run_tokens")) != before + 2 or layer.call("live_count") != 0:
-		lines.append("magnet-catch FAIL: widened radius did not catch the near-edge token"); ok = false
+	var gap_after: Vector2 = (layer.get("_tokens")[0])["pos"]
+	var d_gap_after: float = gap_after.distance_to(ship_pt)
+	lines.append("magnet-pull: at %.1f (>base %.1f, <wide %.1f) dist %.1f -> %.1f (want closer)" % [
+		gap_r, base_r, wide_r, d_gap_before, d_gap_after])
+	if not (d_gap_after < d_gap_before - 1.0):
+		lines.append("magnet-pull FAIL: widened radius did not attract a token the base radius would have missed"); ok = false
 	else:
-		lines.append("magnet-catch OK: near-edge token caught by the widened radius on first step")
+		lines.append("magnet-pull OK: widened radius attracts a token outside the base field")
+	# Let it home in + bank to keep state clean.
+	var before := int(gs.get("run_tokens"))
+	for s in 40:
+		layer.call("step", 0.05)
+	if int(gs.get("run_tokens")) != before + 2 or layer.call("live_count") != 0:
+		lines.append("magnet-catch FAIL: widened-field token did not home in + bank"); ok = false
+	else:
+		lines.append("magnet-catch OK: widened-field token homed in and banked")
 	layer.free()
 	lab.call("clear_perks")
 

@@ -233,6 +233,52 @@ func _initialize() -> void:
 	if OverlayS.new()._monitor_id("RENDER_TOTAL_DRAW_CALLS_IN_FRAME") != Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME:
 		lines.append("overlay FAIL: _monitor_id mapping wrong"); ok = false
 
+	# === #35 perf overlay — DEVICE TOGGLE: Settings persistence + overlay honors it ====
+	# The keyboard F3 toggle is unreachable on a phone, so the overlay must be driven by a persisted
+	# Settings flag (set from the Settings screen). Assert: default OFF, the setter emits-once on the
+	# bus + persists through a ConfigFile round-trip, and set_shown() drives visibility/_process.
+	var settings: Node = root.get_node_or_null("Settings")
+	var events: Node = root.get_node_or_null("Events")
+	if settings == null or events == null:
+		lines.append("overlay FAIL: Settings/Events autoloads missing for the device-toggle test"); ok = false
+	else:
+		var def_perf: bool = bool(settings.get("perf_overlay_enabled"))
+		var seen := [0, false]
+		var on_perf := func(en: bool) -> void: seen[0] += 1; seen[1] = en
+		events.connect("perf_overlay_changed", on_perf)
+		settings.call("set_perf_overlay_enabled", true)
+		settings.call("set_perf_overlay_enabled", true)     # idempotent — must NOT re-emit
+		# Round-trip: a fresh ConfigFile load reflects the saved value under the display section.
+		var fresh := ConfigFile.new()
+		var rc: int = fresh.load(settings.CONFIG_PATH)
+		var saved_perf: bool = bool(fresh.get_value("display", "perf_overlay_enabled", false)) if rc == OK else false
+		events.disconnect("perf_overlay_changed", on_perf)
+		lines.append("overlay toggle: default=%s after-on=%s emits=%d saved=%s (want F,T,1,T)" % [
+			def_perf, settings.get("perf_overlay_enabled"), seen[0], saved_perf])
+		if def_perf:
+			lines.append("overlay FAIL: perf_overlay_enabled should default OFF"); ok = false
+		if not bool(settings.get("perf_overlay_enabled")) or seen[0] != 1 or not bool(seen[1]) or not saved_perf:
+			lines.append("overlay FAIL: setter didn't emit-once + persist perf_overlay_enabled"); ok = false
+		else:
+			lines.append("overlay OK: perf_overlay_enabled defaults OFF, emit-once + ConfigFile round-trip")
+		settings.call("set_perf_overlay_enabled", false)    # restore clean state
+
+		# The overlay HONORS the flag: set_shown() drives visible + _process gating (the pure path the
+		# Events.perf_overlay_changed connection calls). A bare instance never runs _ready, so build the
+		# Label manually first so set_shown's _label clear is exercised.
+		var ov: CanvasLayer = OverlayS.new()
+		ov.set("_label", Label.new())
+		ov.call("set_shown", true)
+		var shown_on: bool = bool(ov.call("is_shown")) and ov.visible
+		ov.call("set_shown", false)
+		var shown_off: bool = (not bool(ov.call("is_shown"))) and (not ov.visible)
+		lines.append("overlay honor: set_shown(true)->on=%s set_shown(false)->off=%s (want T,T)" % [shown_on, shown_off])
+		if not (shown_on and shown_off):
+			lines.append("overlay FAIL: set_shown did not drive visibility (overlay can't honor the setting)"); ok = false
+		else:
+			lines.append("overlay OK: set_shown drives visibility -> overlay honors Settings.perf_overlay_enabled")
+		ov.free()
+
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write(lines)
 

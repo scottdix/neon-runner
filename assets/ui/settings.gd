@@ -21,6 +21,8 @@ func _build() -> void:
 		func(on: bool) -> void: Settings.set_amoled_mode(on)))
 	add_child(_toggle_row("HAPTICS", Settings.haptics_enabled, 820.0,
 		func(on: bool) -> void: Settings.set_haptics_enabled(on)))
+	add_child(_toggle_row("PERF OVERLAY", Settings.perf_overlay_enabled, 980.0,
+		func(on: bool) -> void: Settings.set_perf_overlay_enabled(on)))
 
 
 ## A 3-segment DIFFICULTY selector (#80): EASY / MED / HARD. Tapping a segment commits via

@@ -18,6 +18,17 @@ const SHIP_BOTTOM_MARGIN := 240.0
 # auto-completes a boss level; this pre-finish arm is the belt-and-braces that the climax starts on time.)
 const BOSS_ARM_PROGRESS := 0.999
 
+# #82/#83 boss placement + feel. The hull sits in the UPPER THIRD (not just-above-the-ship) so the
+# whole arena reads + the gravity bend is visible across the playfield. It DRIFTS slowly side to side
+# so the pull is off-axis from the centred ship's straight-up fire (collinear pull is invisible).
+const BOSS_Y_FRAC := 0.26            # vortex core y as a fraction of design height (upper third)
+const BOSS_DRIFT_AMPLITUDE := 240.0  # px of lateral sweep either side of centre
+const BOSS_DRIFT_HZ := 0.07          # very slow — a brooding sweep, not a dodge
+# #83 ship-pull offset feel: how fast the accumulated drag decays back toward 0 when the player is
+# out of the field (so it never sticks), and the playfield clamp on the composed muzzle x.
+const BOSS_GRAVITY_DECAY := 2.4      # per-second exponential-ish decay of the accumulated offset
+const BOSS_GRAVITY_CLAMP := 360.0    # max |offset| so the pull never throws the muzzle off-screen
+
 # Instanced via preload (not the bare class names) so this scene parses in the
 # headless dev loop, where the global class_name cache isn't built without a
 # project --import. The entity scripts keep their class_name regardless.
@@ -59,6 +70,24 @@ var _env: Environment
 # (#59), and the perf cluster (#35 overlay + #38 cull).
 var _boss: Node2D
 var _boss_armed := false
+# #83 ship gravity pull: an ACCUMULATED x-offset the vortex drags the muzzle by, COMPOSED with the
+# player's steer (NOT a direct position write that _on_player_steered would overwrite next frame).
+# Each armed frame we add the per-frame pull velocity, decay it toward 0, and clamp it to the
+# playfield; _on_player_steered then settles _fleet.position.x = steer_x + _boss_gravity_dx.
+var _boss_gravity_dx: float = 0.0
+var _steer_x: float = 0.0           # the player's last raw steer x (so gravity composes with it)
+# #83 boss core horizontal DRIFT: a slow lateral sweep of the vortex so its pull isn't always
+# collinear with the centred ship's straight-up fire — that off-axis pull is what makes the
+# bullet-bending visible. Seeded from the spawn x at arm() time.
+var _boss_drift_t: float = 0.0
+var _boss_base_x: float = 0.0
+# #82/#83 boss HUD: HP bar fill + phase/prompt labels, hidden until a boss is armed.
+var _boss_hud: Control
+var _boss_hp_fill: ColorRect
+var _boss_name_label: Label
+var _boss_prompt_label: Label
+# #79 persistent STANCE indicator (visible the WHOLE run, not just the boss).
+var _stance_label: Label
 var _token_layer: Node2D
 var _phase_director: Node
 var _perf: CanvasLayer
@@ -94,6 +123,9 @@ func _ready() -> void:
 	# fleet muzzle, breach line, gate-crossing line and finish all derive from this y.
 	var screen_h: float = maxf(get_viewport().get_visible_rect().size.y, design.y)
 	var ship_pos := Vector2(design.x * 0.5, screen_h - SHIP_BOTTOM_MARGIN)
+	# Seed the raw-steer cache to the ship's start x so the boss-gravity composition (_steer_x +
+	# _boss_gravity_dx) is correct even before the first steer event fires (#83).
+	_steer_x = ship_pos.x
 
 	# Reactive vector grid floor — sits behind everything (its own CanvasLayer -1),
 	# scrolls with distance, warps under action. Built before the environment so the
@@ -207,6 +239,9 @@ func _ready() -> void:
 	Events.combo_updated.connect(_on_combo_updated)        # #26 pulse/break visual feedback
 	Events.tokens_changed.connect(_on_tokens_changed)      # #78 in-run token counter
 	Events.boss_defeated.connect(_on_boss_defeated)        # #82/#83 the run's WIN terminal
+	Events.boss_spawned.connect(_on_boss_spawned)          # #82/#83 reveal + seed the boss HUD
+	Events.boss_phase_changed.connect(_on_boss_phase_changed)  # #82/#83 phase telegraph + action prompt
+	Events.stance_changed.connect(_on_stance_changed)      # #79 persistent stance indicator
 
 	GameState.start_run()
 	# The level owns the segment schedule (#13): hand the gate formations + enemy waves
@@ -227,10 +262,12 @@ func _ready() -> void:
 	# End-of-run boss (#82/#83). Built DORMANT now (the ship line + fleet both exist by here) and
 	# ARMED only when the track ends in _process — the boss is the run's climax, not its start. It
 	# self-_process()es step() once in the tree; run.gd only arms it + drains its add intent. The fat
-	# hull sits above the ship line so it fills the upper playfield (tune the 600 offset on device).
+	# hull sits in the UPPER THIRD (design.y*0.26) so the whole arena reads and the gravity bend is
+	# visible across the playfield (the old ship-line-minus-600 sat it too low + collinear with fire).
 	_boss = BOSS_SCRIPT.new()
 	_boss.name = "Boss"
-	_boss.position = Vector2(design.x * 0.5, ship_pos.y - 600.0)
+	_boss_base_x = design.x * 0.5
+	_boss.position = Vector2(_boss_base_x, design.y * BOSS_Y_FRAC)
 	add_child(_boss)
 	_boss.set_fleet(_fleet)
 
@@ -247,6 +284,12 @@ func _process(delta: float) -> void:
 		_boss_armed = true
 		GameState.boss_active = true
 		_boss.arm()
+		# #82/#83: PARK two persistent stance gates at the arena flanks for the whole fight — steering
+		# to the left flank flips to SPRAY (+ gate), to the right flank flips to LANCE (÷ gate). This is
+		# the ONLY way to switch stance during the climax (the formation schedule has run out by now),
+		# and it reuses the existing gate path (gate_passed -> GameState.set_stance), no parallel code.
+		if _gates != null and _gates.has_method("spawn_boss_stance_gates"):
+			_gates.spawn_boss_stance_gates()
 
 	# Advance the finite-level scroll (GameState integrates distance + trips the
 	# finish line / win). Run drives the frame; GameState owns the state.
@@ -257,11 +300,14 @@ func _process(delta: float) -> void:
 	if _phase_director:
 		_phase_director.step(GameState.distance)
 
-	# Boss upkeep (#82/#83): drain queued adds + apply the Singularity GRAVITY FIELD to live gameplay.
+	# Boss upkeep (#82/#83): drift the core, drain queued adds, apply the Singularity GRAVITY FIELD to
+	# live gameplay, and feed the boss HUD (HP bar + phase prompt).
 	if _boss_armed:
+		_drift_boss(delta)
 		for a in _boss.take_pending_adds():
 			_targets.spawn_add(a)
 		_apply_boss_gravity(delta)
+		_update_boss_hud()
 
 	# Viewport cull (#38): a cheap off-screen-processing gate. Additive — it never deletes/moves a
 	# node, only set_process on off-band Node2D CHILDREN of the swept layers (the batched MultiMesh
@@ -282,25 +328,42 @@ func _process(delta: float) -> void:
 ##     sailing up through a positive (+/×) gate band is pulled OFF it, and
 ##   • the ship/muzzle x is pulled toward the core (the same vortex), so the steering that would dodge a
 ##     negative (−/÷) gate the core sits over is fought — the economy inversion is REAL, not dead code.
-## The pull is applied to the Fleet's position.x (the muzzle rides under the ship); _on_player_steered
-## settles the steer each frame, so this nudge composes with the player's thumb. No-op for a base Boss
-## (no gravity_on_projectile/pull_on_ship) so only the Singularity inverts the economy.
+## The pull is accumulated into _boss_gravity_dx and COMPOSED with the player's steer in
+## _on_player_steered (set _fleet.position.x = steer_x + _boss_gravity_dx). The old code wrote
+## _fleet.position.x directly, which _on_player_steered overwrote every frame (so the pull was DEAD),
+## AND multiplied the already-per-frame pull by delta again (~0). Both bugs are fixed here: pull.x is
+## a per-frame velocity delta, so we add it straight to the offset (no extra *delta), decay it so it
+## never sticks, and clamp it so it can't throw the muzzle off-screen. No-op for a base Boss (no
+## gravity helpers) so only the Singularity inverts the economy.
 func _apply_boss_gravity(delta: float) -> void:
 	if _boss == null or _fleet == null:
 		return
 	if not _boss.has_method("pull_on_ship") or not _boss.has_method("gravity_on_projectile"):
 		return
-	# Bullet bias: drag every live bullet toward the core (off the positive gates).
-	if _boss.has_method("in_field") and not bool(_boss.call("in_field", _fleet.position)):
-		# The ship/muzzle is outside the field — skip the ship pull, but bullets spread across the
-		# field still get biased inside apply_gravity_bias (its per-bullet field_vector gates itself).
-		_fleet.call("apply_gravity_bias", _boss, delta)
-		return
+	# Bullet bias: drag every live bullet toward the core (off the positive gates). Always run — each
+	# bullet's per-bullet field_vector gates itself, so bullets across the whole field get bent even
+	# when the muzzle itself sits outside the field.
 	_fleet.call("apply_gravity_bias", _boss, delta)
-	# Ship pull: drag the muzzle x toward the core (toward a negative gate the core sits on).
-	var ship_pos: Vector2 = _fleet.position
-	var pull: Vector2 = _boss.call("pull_on_ship", ship_pos, delta)
-	_fleet.position.x += pull.x * delta
+	# Ship pull: accumulate the per-frame drag toward the core into the composable offset (NOT a direct
+	# position write). pull.x is ALREADY a per-frame velocity delta — add it straight, no extra *delta.
+	var pull: Vector2 = _boss.call("pull_on_ship", _fleet.position, delta)
+	_boss_gravity_dx += pull.x
+	# Decay toward 0 so the drag relaxes when the player steers out of the field (never sticks), and
+	# clamp so a long stint in the core can't fling the muzzle past the screen edge.
+	_boss_gravity_dx = move_toward(_boss_gravity_dx, 0.0, BOSS_GRAVITY_DECAY * delta * absf(_boss_gravity_dx))
+	_boss_gravity_dx = clampf(_boss_gravity_dx, -BOSS_GRAVITY_CLAMP, BOSS_GRAVITY_CLAMP)
+	# Settle the muzzle NOW so the pull is felt even on a frame with no fresh steer event.
+	_fleet.position.x = _steer_x + _boss_gravity_dx
+
+
+## Slowly sweep the vortex core left/right (#83) so its pull is OFF-AXIS from the centred ship's
+## straight-up fire — collinear pull bends nothing visibly; an off-axis core makes the bullet-stream
+## visibly arc toward it. One-thumb friendly: it's the boss moving, not a new input.
+func _drift_boss(delta: float) -> void:
+	if _boss == null:
+		return
+	_boss_drift_t += delta
+	_boss.position.x = _boss_base_x + BOSS_DRIFT_AMPLITUDE * sin(_boss_drift_t * TAU * BOSS_DRIFT_HZ)
 
 
 ## Pause on the back/escape action (also wired to the on-screen pause button).
@@ -310,8 +373,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _on_player_steered(x: float, _x_norm: float) -> void:
+	# Record the raw steer so the boss gravity offset composes with it (the vortex pull is added on
+	# TOP of where the thumb wants the muzzle — #83). Without a boss, _boss_gravity_dx stays 0, so this
+	# is the plain steer mirror it always was.
+	_steer_x = x
 	if _fleet:
-		_fleet.position.x = x
+		_fleet.position.x = _steer_x + _boss_gravity_dx
 
 
 func _on_distance_changed(distance: float, progress: float) -> void:
@@ -330,8 +397,71 @@ func _on_tokens_changed(in_run: int) -> void:
 ## complete_run's own run_active guard) and complete the run (banks tokens, emits run_completed →
 ## SceneManager swaps to Results).
 func _on_boss_defeated(_name: String, _at: Vector2) -> void:
+	if _boss_hud != null:
+		_boss_hud.visible = false
 	GameState.boss_active = false
 	GameState.complete_run()
+
+
+## #82/#83: a boss armed — reveal the boss HUD, label it, and seed the HP bar full. boss_spawned had
+## ZERO consumers before this (the HUD was the missing live integration).
+func _on_boss_spawned(boss_name: String, _max_hp: float) -> void:
+	if _boss_name_label != null:
+		_boss_name_label.text = boss_name
+	if _boss_hp_fill != null:
+		_boss_hp_fill.size.x = _boss_hud_bar_width()
+	if _boss_hud != null:
+		_boss_hud.visible = true
+
+
+## #82/#83: the boss crossed into a new phase — set the ACTION PROMPT so the player knows the answer:
+## TELEGRAPH = "INCOMING", ARMORED = focus into LANCE (steer right flank), ADD_SWARM = spread to clear
+## adds (steer left flank), DEFEATED = clear. boss_phase_changed had ZERO consumers before this.
+func _on_boss_phase_changed(_phase: int, phase_name: String) -> void:
+	if _boss_prompt_label == null:
+		return
+	match phase_name:
+		"TELEGRAPH":
+			_boss_prompt_label.text = "INCOMING"
+			_boss_prompt_label.modulate = Palette.COMBO_ORANGE_HUD
+		"ARMORED":
+			_boss_prompt_label.text = "FOCUS — SWITCH TO LANCE"
+			_boss_prompt_label.modulate = Palette.ACCENT_CYAN_HUD
+		"ADD_SWARM":
+			_boss_prompt_label.text = "SPREAD — CLEAR THE ADDS"
+			_boss_prompt_label.modulate = Palette.MENU_GOLD_HUD
+		_:
+			_boss_prompt_label.text = ""
+
+
+## #79: the stream stance flipped — relabel + recolour the persistent indicator. SPRAY reads warm
+## (wide/light gold), LANCE reads cool (narrow/heavy cyan). stance_changed had no HUD consumer before.
+func _on_stance_changed(_stance: int, is_spray: bool) -> void:
+	if _stance_label == null:
+		return
+	if is_spray:
+		_stance_label.text = "SPRAY"
+		_stance_label.modulate = Palette.MENU_GOLD_HUD
+	else:
+		_stance_label.text = "LANCE"
+		_stance_label.modulate = Palette.ACCENT_CYAN_HUD
+
+
+## The boss HP bar's full pixel width (the track/fill width). Single source so the seed + the per-frame
+## poll agree. Read off the live fill's track sibling would be fragile; the bar is a fixed 760 px.
+func _boss_hud_bar_width() -> float:
+	return 760.0
+
+
+## Poll the boss's hp_fraction each armed frame and shrink the HP fill (run.gd drives it; the boss
+## stays a pure sim). Called from _process while the boss is armed.
+func _update_boss_hud() -> void:
+	if _boss == null or _boss_hp_fill == null:
+		return
+	if not _boss.has_method("hp_fraction"):
+		return
+	var frac: float = clampf(float(_boss.call("hp_fraction")), 0.0, 1.0)
+	_boss_hp_fill.size.x = _boss_hud_bar_width() * frac
 
 
 func _on_battery_changed(value: float, max_value: float) -> void:
@@ -446,10 +576,64 @@ func _build_hud() -> void:
 	_battery_fill.color = Palette.BATTERY_HIGH_HUD
 	layer.add_child(_battery_fill)
 
+	# #79 STANCE indicator — visible the WHOLE run (the core readability the #79 design needs, not
+	# just a boss thing). Centred under the battery strip; recoloured + relabelled by stance_changed.
+	# SPRAY = warm gold (wide/light), LANCE = cool cyan (narrow/heavy). Seeded to the run start (SPRAY).
+	_stance_label = UI.text("SPRAY", Fonts.arcade, 30, Palette.MENU_GOLD_HUD, HORIZONTAL_ALIGNMENT_CENTER)
+	_stance_label.size.x = UI.DESIGN.x
+	_stance_label.position = Vector2(0.0, BATTERY_TOP + 24.0 + top)
+	layer.add_child(_stance_label)
+
+	# #82/#83 BOSS HUD — HP bar + phase telegraph + action prompt. Built hidden; revealed by
+	# boss_spawned, hidden again on defeat. Pinned to the top of the playfield (below the status row).
+	_build_boss_hud(layer, top)
+
 	# Pause overlay — created hidden; raised by the pause button / ui_cancel (#43).
 	_pause = PAUSE_SCRIPT.new()
 	_pause.name = "Pause"
 	add_child(_pause)
+
+
+## #82/#83 boss HUD: a name + HP bar + an ACTION PROMPT, parked across the top of the playfield (under
+## the SCORE/TOKEN status block). Hidden until a boss arms (boss_spawned) and re-hidden on defeat. The
+## HP bar fill is polled from the boss each frame while armed; the prompt is driven by phase changes.
+func _build_boss_hud(layer: CanvasLayer, top: float) -> void:
+	var hud := Control.new()
+	hud.name = "BossHUD"
+	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.visible = false
+	hud.position = Vector2(0.0, 360.0 + top)
+	layer.add_child(hud)
+	_boss_hud = hud
+
+	# Boss name (centred caption above the bar).
+	_boss_name_label = UI.text("", Fonts.arcade, 30, Palette.GATE_NEGATIVE, HORIZONTAL_ALIGNMENT_CENTER)
+	_boss_name_label.size.x = UI.DESIGN.x
+	_boss_name_label.position = Vector2(0.0, 0.0)
+	hud.add_child(_boss_name_label)
+
+	# HP bar: dark track + a red fill that shrinks left→right as the boss's hp_fraction drops.
+	const BAR_W := 760.0
+	const BAR_H := 26.0
+	var bar_x: float = (UI.DESIGN.x - BAR_W) * 0.5
+	var track := ColorRect.new()
+	track.name = "BossHPTrack"
+	track.position = Vector2(bar_x, 56.0)
+	track.size = Vector2(BAR_W, BAR_H)
+	track.color = Palette.BATTERY_TRACK_HUD
+	hud.add_child(track)
+	_boss_hp_fill = ColorRect.new()
+	_boss_hp_fill.name = "BossHPFill"
+	_boss_hp_fill.position = Vector2(bar_x, 56.0)
+	_boss_hp_fill.size = Vector2(BAR_W, BAR_H)
+	_boss_hp_fill.color = Palette.BATTERY_LOW_HUD
+	hud.add_child(_boss_hp_fill)
+
+	# Action prompt — the phase-driven instruction ("FOCUS — SWITCH TO LANCE", etc).
+	_boss_prompt_label = UI.text("", Fonts.arcade, 28, Palette.HUD_WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	_boss_prompt_label.size.x = UI.DESIGN.x
+	_boss_prompt_label.position = Vector2(0.0, 98.0)
+	hud.add_child(_boss_prompt_label)
 
 
 ## Top safe-area inset expressed in CANVAS units (the design-space the HUD lays out in).

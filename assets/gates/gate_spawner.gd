@@ -38,6 +38,18 @@ var recycled: int = 0               # formations freed after passing the player 
 var _next_gate_id: int = 0
 var _pending_hijacks: Array = []    # [{id, x}, ...] gates awaiting a parked enemy
 
+## Boss-arena STANCE gates (#82/#83). Unlike scrolling formation gates, these are PARKED at a
+## fixed y at the flanks of the arena for the WHOLE boss fight — the player steers through them
+## to flip stance at will (the only way to switch mid-boss, since the formation schedule has run
+## out by the climax). Each entry: {gate:Gate, band_min, band_max, armed:bool}. A gate FIRES once
+## as the ship enters its band, then DISARMS; it RE-ARMS (and resets gate.has_been_triggered) once
+## the ship leaves the band, so passing back and forth re-flips stance for the entire fight.
+const BOSS_GATE_Y_FRAC := 0.62        # parked y as a fraction of design height (mid-low arena)
+const BOSS_GATE_SPRAY_X := 150.0      # left-flank SPRAY (+) gate centre x
+const BOSS_GATE_LANCE_X := 930.0      # right-flank LANCE (÷) gate centre x
+const BOSS_GATE_HALF_BAND := 170.0    # x half-width that counts as "through" the parked gate
+var _boss_gates: Array = []           # [{gate, band_min, band_max, armed}, ...]
+
 
 ## Run calls this with the ship's canvas y before adding us to the tree.
 func setup(trigger_y: float) -> void:
@@ -94,6 +106,73 @@ func take_pending_hijacks() -> Array:
 	var out: Array = _pending_hijacks
 	_pending_hijacks = []
 	return out
+
+
+## Inject the two PERSISTENT boss-arena stance gates (#82/#83) — run.gd calls this once when the
+## boss ARMS. A SPRAY (+) gate on the left flank and a LANCE (÷) gate on the right flank are PARKED
+## at a fixed mid-arena y for the whole fight. They reuse the normal Gate (configure + trigger ->
+## gate_passed -> GameState flips stance), so there is no parallel stance path. update() re-arms them
+## as the ship steers in/out, so the player can flip stance freely all fight. Idempotent — a second
+## call is a no-op (the gates already exist). The bands are wide + on the flanks so the bottom-screen
+## ship can always reach BOTH by steering to an edge.
+func spawn_boss_stance_gates() -> void:
+	if not _boss_gates.is_empty():
+		return
+	var y: float = _design.y * BOSS_GATE_Y_FRAC
+	var spray: Node2D = GATE.new()
+	spray.name = "BossGateSpray"
+	# A "+1" gate: POSITIVE -> GameState._on_gate_passed sets SPRAY. value 1 keeps the economy nudge
+	# tiny so the gate is a stance toggle, not a volume cheat during the climax.
+	spray.configure(GATE.op_from_string("add"), 1.0, 0.0, 0.0, BOSS_GATE_SPRAY_X)
+	spray.position.y = y
+	spray.hijack_id = _next_gate_id
+	_next_gate_id += 1
+	add_child(spray)
+	_boss_gates.append({
+		"gate": spray,
+		"band_min": BOSS_GATE_SPRAY_X - BOSS_GATE_HALF_BAND,
+		"band_max": BOSS_GATE_SPRAY_X + BOSS_GATE_HALF_BAND,
+		"armed": true,
+	})
+	var lance: Node2D = GATE.new()
+	lance.name = "BossGateLance"
+	# A "÷1" gate: NEGATIVE/focusing -> GameState._on_gate_passed sets LANCE. value 1 is IDENTITY on the
+	# volume (÷1 leaves it untouched) so the gate is a pure stance toggle, not a volume cheat. NOTE: as
+	# a negative gate it DOES cost one DRAIN_PER_NEGATIVE_GATE per ENTRY (GameState owns that), but the
+	# gate only re-fires after the ship LEAVES the band — so focusing for a whole phase costs one drain,
+	# not a per-frame bleed. That's an intentional "focusing has a price" risk; tune on device (#82/#83).
+	lance.configure(GATE.op_from_string("div"), 1.0, 0.0, 0.0, BOSS_GATE_LANCE_X)
+	lance.position.y = y
+	lance.hijack_id = _next_gate_id
+	_next_gate_id += 1
+	add_child(lance)
+	_boss_gates.append({
+		"gate": lance,
+		"band_min": BOSS_GATE_LANCE_X - BOSS_GATE_HALF_BAND,
+		"band_max": BOSS_GATE_LANCE_X + BOSS_GATE_HALF_BAND,
+		"armed": true,
+	})
+
+
+## Step the persistent boss stance gates against the ship's x (called from update). A gate FIRES once
+## as the ship enters its band (flips stance via gate_passed), then DISARMS; it RE-ARMS — resetting
+## gate.has_been_triggered so trigger() works again — once the ship leaves the band. So steering to the
+## left flank sets SPRAY, to the right flank sets LANCE, freely, all fight. Pure logic (headless).
+func _update_boss_gates(ship_x: float) -> void:
+	for bg in _boss_gates:
+		var inside: bool = ship_x >= bg["band_min"] and ship_x < bg["band_max"]
+		if inside and bg["armed"]:
+			bg["armed"] = false
+			bg["gate"].has_been_triggered = false   # allow this re-entry to fire
+			bg["gate"].trigger(GameState.projectile_count)
+			triggers += 1
+		elif not inside and not bg["armed"]:
+			bg["armed"] = true                       # left the band — ready to fire again on re-entry
+
+
+## Whether the persistent boss stance gates are live (verify/run.gd readability).
+func boss_gate_count() -> int:
+	return _boss_gates.size()
 
 
 ## Live POSITIVE gate bands for the multiply-through interaction (#53): each
@@ -155,6 +234,10 @@ func update(distance: float, ship_x: float) -> void:
 		else:
 			survivors.append(f)
 	_formations = survivors
+	# Persistent boss-arena stance gates (#82/#83): re-arm/fire against the same ship x so the player
+	# can flip stance freely throughout the climax (no-op until run.gd injects them via spawn_boss_stance_gates).
+	if not _boss_gates.is_empty():
+		_update_boss_gates(ship_x)
 
 
 func _clear_formations() -> void:

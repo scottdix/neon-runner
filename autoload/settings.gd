@@ -24,6 +24,10 @@ var sfx_enabled: bool = true
 var music_enabled: bool = true
 ## OLED pitch-black + low-power bloom mode (defaults OFF — opt-in).
 var amoled_mode: bool = false
+## On-screen perf overlay (#35) visibility (defaults OFF — a debug surface). Toggled from the
+## Settings screen so it works on a phone (no keyboard F3); the PerfOverlay reads this + reacts to
+## perf_overlay_changed. Persisted alongside the other display toggles.
+var perf_overlay_enabled: bool = false
 ## High score shown on Title (BEST) + flagged on Results (NEW BEST). Persisted here
 ## since this autoload already owns the save file.
 var best_score: int = 0
@@ -43,6 +47,16 @@ func set_amoled_mode(enabled: bool) -> void:
 	amoled_mode = enabled
 	save_settings()
 	Events.amoled_mode_changed.emit(amoled_mode)
+
+
+## Toggle the on-screen perf overlay (#35). No-op on no change, persist, and announce on the bus
+## so the live PerfOverlay shows/hides immediately. The Settings screen is the device-friendly path.
+func set_perf_overlay_enabled(enabled: bool) -> void:
+	if enabled == perf_overlay_enabled:
+		return
+	perf_overlay_enabled = enabled
+	save_settings()
+	Events.perf_overlay_changed.emit(perf_overlay_enabled)
 
 
 func set_haptics_enabled(enabled: bool) -> void:
@@ -97,6 +111,7 @@ func load_settings() -> void:
 	sfx_enabled = bool(cfg.get_value(SECTION, "sfx_enabled", sfx_enabled))
 	music_enabled = bool(cfg.get_value(SECTION, "music_enabled", music_enabled))
 	amoled_mode = bool(cfg.get_value(SECTION, "amoled_mode", amoled_mode))
+	perf_overlay_enabled = bool(cfg.get_value(SECTION, "perf_overlay_enabled", perf_overlay_enabled))
 	best_score = int(cfg.get_value(PROGRESS, "best_score", best_score))
 	difficulty = clampi(int(cfg.get_value(PROGRESS, "difficulty", difficulty)), 0, 2)
 
@@ -107,6 +122,7 @@ func save_settings() -> void:
 	cfg.set_value(SECTION, "sfx_enabled", sfx_enabled)
 	cfg.set_value(SECTION, "music_enabled", music_enabled)
 	cfg.set_value(SECTION, "amoled_mode", amoled_mode)
+	cfg.set_value(SECTION, "perf_overlay_enabled", perf_overlay_enabled)
 	cfg.set_value(PROGRESS, "best_score", best_score)
 	cfg.set_value(PROGRESS, "difficulty", difficulty)
 	cfg.save(CONFIG_PATH)

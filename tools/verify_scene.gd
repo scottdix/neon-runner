@@ -81,6 +81,20 @@ func _process(_delta: float) -> bool:
 		if waves <= 0:
 			_lines.append("targets FAIL: enemy wave schedule not wired from the level"); ok = false
 
+	# ---- LIVE WIRING (#82/#83/#79): these signals once had ZERO consumers in the real scene (the
+	# boss HUD + stance indicator were missing live integration). Assert the run scene actually
+	# CONNECTS them, so that class of "verified-but-dead" gap can't pass again. We check the live
+	# Events autoload's connection list — the scene's _ready must have wired each.
+	var ev: Node = root.get_node_or_null("Events")
+	if ev != null:
+		for sig in ["boss_spawned", "boss_phase_changed", "stance_changed"]:
+			var conns: int = ev.get_signal_connection_list(sig).size()
+			_lines.append("wiring: Events.%s connections=%d" % [sig, conns])
+			if conns <= 0:
+				_lines.append("wiring FAIL: Events.%s has NO consumer in the live run scene" % sig); ok = false
+	else:
+		_lines.append("wiring FAIL: Events autoload missing"); ok = false
+
 	_lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write()
 	return true

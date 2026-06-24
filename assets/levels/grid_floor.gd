@@ -296,10 +296,14 @@ func _flush_beat() -> void:
 
 ## Scroll the grid in CELLS, derived from metres travelled on the shared projection so
 ## it tracks gates/finish exactly (PIXELS_PER_METER px per metre / CELL_PX px per cell).
+## NEGATED so forward travel reads as the grid flowing TOP -> BOTTOM (the world coming toward
+## the player at the bottom). The shader does `gy = p.y / cell_size + scroll`; a POSITIVE
+## scroll slides lines UP on screen (backward), so we feed it the negative of distance to get
+## the correct downward forward-motion flow on device. Warp/ripple/beat-pulse are untouched.
 func _on_distance_changed(distance: float, _progress: float) -> void:
 	if _mat == null:
 		return
-	_mat.set_shader_parameter("scroll", distance * TRACK.PIXELS_PER_METER / CELL_PX)
+	_mat.set_shader_parameter("scroll", -distance * TRACK.PIXELS_PER_METER / CELL_PX)
 
 
 ## A kill (is_implosion=false → outward ring) or a breach/divide (is_implosion=true →

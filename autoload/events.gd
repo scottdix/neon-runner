@@ -114,6 +114,11 @@ signal amoled_mode_changed(enabled: bool)
 ## on an actual change; the Difficulty autoload re-reads its active profile on this, and any open
 ## settings UI refreshes its selector. Single owner = Settings (persists the int).
 signal difficulty_changed(mode: int)
+## Perf overlay visibility toggled (#35). Emitted ONLY by Settings.set_perf_overlay_enabled on an
+## actual change so the on-screen instrumentation can be turned on/off from the Settings screen
+## (the device path — a phone can't press the F3 keyboard toggle). The PerfOverlay reacts to this
+## to show/hide live; Settings persists the bool. Single owner = Settings.
+signal perf_overlay_changed(enabled: bool)
 
 # --- Loadout / Splice (meta-progression: #67 garage, #68 splice lab) ----------
 ## The player's ship loadout changed (hull / trail / engine). Garage commits via the

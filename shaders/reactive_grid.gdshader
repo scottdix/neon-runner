@@ -99,7 +99,7 @@ void fragment() {
 
 	vec2 p = px + warp;
 	float gx = p.x / cell_size;
-	float gy = p.y / cell_size + scroll;       // scroll moves lines downward toward the ship
+	float gy = p.y / cell_size + scroll;       // GridFloor feeds NEGATIVE scroll on forward travel so lines flow TOP->BOTTOM toward the ship
 
 	float line = max(line_mask(gx), line_mask(gy));
 

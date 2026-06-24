@@ -21,7 +21,11 @@ extends Boss
 ## from Boss; only the mechanic (gravity) + visual differ.
 
 const BOSS_NAME := "SINGULARITY"
-const SING_MAX_HP := 7000.0
+## HP tuned for a TENSE-but-winnable climax (#82/#83 re-tune): 7000 was a ~40s sponge wall. Once the
+## player uses the boss-arena stance gates to switch to LANCE (weight 6 -> full crack on the armored
+## hull), a healthy swarm clears the ARMORED half + the open ADD_SWARM half in a satisfying ~20-30s.
+## ARMORED runs 100%->50% (forces a LANCE), ADD_SWARM 50%->0 (full damage either stance).
+const SING_MAX_HP := 4500.0
 
 ## The vortex's reach (px): beyond this the field is ~0 (a projectile/ship outside it is unaffected).
 ## Boss-scale so the inversion bites across most of the playfield.
