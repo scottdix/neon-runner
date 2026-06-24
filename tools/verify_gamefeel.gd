@@ -83,6 +83,19 @@ func _initialize() -> void:
 	gs.call("register_kill", 50)
 	lines.append("combo after 2 kills = %d (handler ran, no crash)" % int(gs.get("combo")))
 
+	# --- Music-reactive grid (#61): a music_beat must reach the live GridFloor and arm its pulse -
+	# (Bare `Events` won't resolve in the `-s` main tool script — use the /root node ref to emit.)
+	var grid: Node = run.get_node_or_null("GridFloor")
+	var ev: Node = root.get_node_or_null("Events")
+	if grid != null and ev != null:
+		ev.emit_signal("music_beat", 1.0)
+		var pulse: float = float(grid.call("beat_pulse_amount"))
+		lines.append("grid beat pulse after music_beat(1.0) = %.2f (want 1.0 — GridFloor wired to Events.music_beat)" % pulse)
+		if not is_equal_approx(pulse, 1.0):
+			lines.append("beat FAIL: GridFloor did not catch Events.music_beat"); ok = false
+	else:
+		lines.append("beat FAIL: GridFloor or Events missing for the music-reactive check"); ok = false
+
 	run.queue_free()
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write(lines)

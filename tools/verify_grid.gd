@@ -136,6 +136,7 @@ func _initialize() -> void:
 			"ripple_implode": PackedFloat32Array([1.0]),
 			"shift_color": Color(0.3, 0.3, 3.8, 1.0),
 			"shift_amount": 0.5,
+			"beat_pulse": 0.7,
 			"resolution": Vector2(1080.0, 2340.0),
 		}
 		for key in probes:
@@ -147,6 +148,28 @@ func _initialize() -> void:
 		lines.append("shader: ripple/shift/resolution uniforms present, missing=%s (want [])" % str(missing))
 		if not missing.is_empty():
 			lines.append("shader FAIL: reactive uniforms missing after restyle"); ok = false
+
+	# === 8) BEAT PULSE (#61): arms, max()-holds, decays to 0 ==================
+	# music_beat → pulse_beat arms a global brightness/warp breath; a weaker off-beat must not
+	# cut a live stronger downbeat short, and it must decay cleanly to 0 (pure, no material).
+	var g6 = GridS.new()
+	lines.append("beat: initial pulse=%.2f (want 0)" % g6.beat_pulse_amount())
+	if g6.beat_pulse_amount() != 0.0:
+		lines.append("beat FAIL: pulse should start at 0"); ok = false
+	g6.pulse_beat(1.0)
+	if not is_equal_approx(g6.beat_pulse_amount(), 1.0):
+		lines.append("beat FAIL: pulse_beat did not arm to full"); ok = false
+	g6.pulse_beat(0.3)                                 # weaker off-beat must NOT clobber the 1.0
+	lines.append("beat: after weak-over-strong=%.3f (want 1.0 — max-held)" % g6.beat_pulse_amount())
+	if not is_equal_approx(g6.beat_pulse_amount(), 1.0):
+		lines.append("beat FAIL: weak pulse clobbered a stronger live one"); ok = false
+	g6.advance(g6.BEAT_PULSE_DECAY * 0.5)
+	var b_mid: float = g6.beat_pulse_amount()
+	g6.advance(g6.BEAT_PULSE_DECAY)                     # past the rest of the window → 0
+	var b_end: float = g6.beat_pulse_amount()
+	lines.append("beat: mid=%.3f end=%.3f (want 0<mid<1, end=0)" % [b_mid, b_end])
+	if not (b_mid > 0.0 and b_mid < 1.0) or b_end != 0.0:
+		lines.append("beat FAIL: beat pulse did not decay to 0"); ok = false
 
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write(lines)

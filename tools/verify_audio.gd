@@ -121,6 +121,33 @@ func _initialize() -> void:
 	if not (stem_bed is AudioStreamWAV) or (stem_bed as AudioStreamWAV).data.size() <= 0:
 		lines.append("music bed FAIL: stem bed missing/empty"); ok = false
 
+	# === 6b) BEAT CLOCK (#61): period locked to the bed, downbeat strongest, phase fires beats ===
+	if not ev.has_signal("music_beat"):
+		lines.append("beat FAIL: Events.music_beat signal missing"); ok = false
+	var period := float(am.call("_beat_period"))
+	# One beat per bass note → period == bed_dur / note_count, and the bed must carry exactly
+	# that many notes so the two never drift.
+	var want_period: float = float(AudioS.GAME_BED_DUR) / float(AudioS.GAME_BED_NOTES)
+	var s_down := float(am.call("_beat_strength", 0))                       # bar downbeat (bass root)
+	var s_off := float(am.call("_beat_strength", 1))                        # off-beat
+	var s_wrap := float(am.call("_beat_strength", AudioS.BEATS_PER_BAR))    # next bar's downbeat
+	lines.append("beat: period=%.4f want=%.4f down=%.2f off=%.2f wrap=%.2f (want period match, down>off, wrap==down)" % [
+		period, want_period, s_down, s_off, s_wrap])
+	if not is_equal_approx(period, want_period) or period <= 0.0:
+		lines.append("beat FAIL: beat period not locked to the bed tempo"); ok = false
+	if not (s_down > s_off) or not is_equal_approx(s_wrap, s_down):
+		lines.append("beat FAIL: downbeat not strongest / bar phase wrong"); ok = false
+	# Phase advance fires the right beat count and wraps below the period.
+	var adv_none: Dictionary = am.call("_advance_beat_phase", 0.0, period * 0.1, period)
+	var adv_one: Dictionary = am.call("_advance_beat_phase", 0.0, period, period)
+	var adv_three: Dictionary = am.call("_advance_beat_phase", 0.0, period * 3.0, period)
+	lines.append("beat: fired @0.1T=%d @1T=%d @3T=%d phase@1T=%.4f (want 0,1,3, phase<period)" % [
+		int(adv_none["fired"]), int(adv_one["fired"]), int(adv_three["fired"]), float(adv_one["phase"])])
+	if int(adv_none["fired"]) != 0 or int(adv_one["fired"]) != 1 or int(adv_three["fired"]) != 3:
+		lines.append("beat FAIL: phase advance fired the wrong beat count"); ok = false
+	if float(adv_one["phase"]) >= period or float(adv_one["phase"]) < 0.0:
+		lines.append("beat FAIL: beat phase did not wrap below the period"); ok = false
+
 	# === 7) handlers + playback run clean on a bare .new() (guarded no-ops) ===
 	# No players/buses exist (no _ready), so every playback path must early-return cleanly.
 	am.call("play_sfx", "explosion")

@@ -61,6 +61,13 @@ uniform float ripple_width = 120.0;          // shared ring falloff width in px
 uniform vec4 shift_color : source_color = vec4(0.3, 0.3, 3.8, 1.0);  // HDR, blooms like the grid
 uniform float shift_amount = 0.0;     // 0 = pure grid_color, 1 = full shift_color
 
+// Music beat pulse (#61). GridFloor arms this to a beat's strength (0..1, bar downbeat = 1)
+// on each Events.music_beat and decays it to 0, so the whole grid throbs BRIGHTER (and warps a
+// touch more) on the bass — the music-reactive breath. 0 = resting grid, unchanged.
+uniform float beat_pulse = 0.0;
+uniform float beat_brightness = 0.6;  // extra line brightness at a full-strength beat (×)
+uniform float beat_warp = 0.3;        // extra warp swell at a full-strength beat (× the warp)
+
 // Distance (px) from coordinate `c` (in cells) to the nearest integer grid line,
 // expressed back in px, turned into a soft line mask.
 float line_mask(float c) {
@@ -75,7 +82,9 @@ void fragment() {
 	// Ambient sinusoidal warp — gentle, low-frequency breathing (calmed for #71). Lower
 	// spatial frequency + amplitude reads as a slow swell rather than a busy ripple.
 	float t = TIME * warp_speed;
-	vec2 warp = vec2(sin(px.y * 0.006 + t * 1.3), sin(px.x * 0.006 + t * 1.1)) * warp_amp;
+	// A music beat swells the ambient warp a touch (#61) so the grid breathes outward on the bass.
+	vec2 warp = vec2(sin(px.y * 0.006 + t * 1.3), sin(px.x * 0.006 + t * 1.1))
+		* warp_amp * (1.0 + beat_pulse * beat_warp);
 
 	// Transient radial ripples — SUM every active slot's displacement around its impact
 	// point. An inactive slot (strength 0) contributes nothing (ring scales by strength),
@@ -101,5 +110,7 @@ void fragment() {
 
 	// Color-shift: lerp the grid hue toward the recent action's colour (still HDR → blooms).
 	vec3 col = mix(grid_color.rgb, shift_color.rgb, clamp(shift_amount, 0.0, 1.0));
-	COLOR = vec4(col, line * intensity * depth);
+	// Music beat brightens the whole grid (#61) — a global throb on the bass that blooms harder.
+	float beat = 1.0 + clamp(beat_pulse, 0.0, 1.0) * beat_brightness;
+	COLOR = vec4(col, line * intensity * depth * beat);
 }

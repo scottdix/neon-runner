@@ -4,8 +4,24 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-23"
-  session: 19
+  session: 20
   notes: >
+    Session 20 (CLOSED OUT v0.4.0 — the milestone now has 0 open issues). Cleared the last two open
+    items. #61 (music-reactive audio) CLOSED: built the unfinished beat-reactive grid pulse — grid pulses
+    locked to the synthesized game bed's BASS ONSETS (deterministic, no FFT). New Events.music_beat(strength);
+    AudioManager beat clock (GAME_BED_DUR/GAME_BED_NOTES, one beat/bass-note, downbeat emphasized; pure
+    _beat_period/_beat_strength/_advance_beat_phase; emits in _process; gated to the "game" bed); GridFloor
+    pulse_beat() global brightness/warp breath w/ decay (BEAT_PULSE_DECAY, max-held) + _flush_beat; new
+    `beat_pulse` shader uniform brightens grid + swells warp on the bass. #53 (Entropy faction epic) CLOSED:
+    was already fully built + live in build #14 (targets.gd all archetypes + hijack + multiply + batched
+    damage), verified-not-rebuilt; the deferred Singularity miniboss carved to #83. Created v0.5.0 epic #84
+    (Combat & Economy Depth) as #53's successor, parenting #78/#79/#80/#82 + #83 (Singularity moved to
+    v0.5.0). VALIDATION: --import clean + 11/11 headless verifies PASS (extended verify_audio beat clock,
+    verify_grid pulse decay + shader uniform, verify_gamefeel live music_beat->GridFloor integration; full
+    regression green). Device-only: beat-pulse FEEL + all bloom/audio/haptics un-renderable on the mini; NO
+    new TestFlight build this session (build #14 still current). Device polish pass + #76 notch fix remain
+    device-backlog (gated on a real iPhone). Commit cadence: committed at handoff to main.
+  previous_notes: >
     Session 19 (ULTRACODE — cleared the ENTIRE v0.4.0 Game Feel (Juice) epic + shipped build #14 to
     TestFlight, internal + external/Patrick both distributed; user confirmed "all working as expected, but
     need further polish"). Built 4 new components in parallel via a Workflow against a fixed contract, then
@@ -24,59 +40,51 @@ last_updated:
     low-pass DSP hook, but beat/bass-envelope->grid-ripple pulse NOT done. Build #14 = first since #13, so
     the #76 notch fix is now device-checkable. All shake/flash/audio/haptic FEEL is device-only (mini can't
     render bloom/audio).
-  previous_notes: >
-    Session 18 (DESIGN-ONLY — review of Patrick's TestFlight gameplay feedback; NO code). Turned 5 tester
-    points into a v0.5.0 combat/economy depth pass, backed by a 5-agent Opus research dive → NEW
-    docs/design/GATE_ECONOMY.md. NEW ISSUES: #78 Splice Lab economy, #79 gate-economy depth (Spray<->Lance
-    stance + threat triangle — THE keystone; priority:high; theme-agnostic), #80 Easy/Med/Hard difficulty,
-    #81 ICEBOX/V2 twin-stick arena, #82 boss encounters — #78/#79/#80/#82 all v0.5.0. Closed the stale
-    adaptive-difficulty epic #29-33 (folded into #59). LOCKED: Spray/Lance discrete+flippable; Rhombus
-    immunity scales w/ difficulty; meta horizontal not stat-creep; end-of-run boss first; bosses vary
-    one-thumb control; in-run pickups = tokens. PARKED: "math" theme reskin (kept out of #79), stance-flip
-    cost, in-run consumables, debut boss. FOLLOW-UP: update GAME_SCOPE §4.2-4.4 to the stance model +
-    elevated boss role — deferred until the math-theme question resolves.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
 # =============================================================================
 focus:
-  active_milestone: "v0.4.0 - Game Feel"
-  active_epic: "#22 — Phase 5: Game Feel (Juice) [CLOSED — systems shipped in build #14]"
-  current_issue: "DEVICE POLISH PASS on the v0.4.0 Game Feel (build #14) — the user asked for 'further polish'. Tune on a real iPhone (mini can't render bloom/audio/haptics): screen-shake/flash intensities (#23), the procedural SFX + music mix (#24/#25), haptic tiers (#65), and FINISH #61 (beat-reactive grid pulse — the one Game-Feel item still OPEN). Plus the #77 consolidated visual-polish backlog + confirm the #76 notch fix (build #14 is the first build since #13)."
-  next_issue: "#79 — [Gameplay] Gate-economy depth (Spray<->Lance stance + threat triangle), the v0.5.0 priority:high KEYSTONE. Other v0.5.0 open: #78 Splice Lab token economy, #80 Easy/Med/Hard difficulty, #82 bosses. Also still open under v0.4.0: #53 Entropy enemy-faction epic, #61 (adaptive-audio remainder)."
+  active_milestone: "v0.5.0 - Complete Game"
+  active_epic: "#84 — Combat & Economy Depth (Entropy v2, gate stance, bosses) [successor to the CLOSED #53]"
+  current_issue: "#79 — [Gameplay] Gate-economy depth (Spray<->Lance stance + threat triangle), the v0.5.0 priority:high KEYSTONE under epic #84. Sequence FIRST — the discrete/flippable stance model is the spine #78/#80/#82/#83 hang off. Design locked in docs/design/GATE_ECONOMY.md (session 18): Spray vs Lance discrete + flippable; Rhombus immunity scales w/ difficulty; threat triangle. PARKED for later: 'math' theme reskin, stance-flip cost."
+  next_issue: "Rest of epic #84: #78 Splice Lab token economy, #80 Easy/Med/Hard difficulty, #82 boss encounters (framework + first boss), #83 Entropy 'Singularity' miniboss (carved from #53; likely folds into #82). #81 twin-stick arena stays ICEBOX/V2 (NOT in #84)."
   notes: >
-    Session 19 cleared the WHOLE v0.4.0 Game Feel epic (#23-28, #65) in one ultracode pass and SHIPPED
-    build #14 to TestFlight — internal (you, scottdix@gmail.com) + external (Patrick, phresko@gmail.com)
-    both distributed; user confirmed it works. EPIC #22 is CLOSED. The juice systems all exist + are
-    headless-validated (9/9 verifies PASS incl. a new verify_gamefeel.gd full run-scene smoke; project
-    --import clean). NEW FILES: assets/effects/feedback_manager.gd (#23), autoload/audio_manager.gd (#24,
-    registered after Haptics + before SceneManager), assets/ui/score_popup_layer.gd (#27),
-    assets/effects/milestone_banner.gd (#28); new Events signals trigger_screen_flash + milestone_reached;
-    new Settings.sfx_enabled/music_enabled. Audio is FULLY PROCEDURAL (synth WAVs in AudioManager._ready) —
-    audio/ stays empty. Run z-order is now explicit: world(0)<flash(40)<HUD(50)<milestone(60)<pause(100).
-    THE WORK IS NOT YET PLAYTESTED ON DEVICE FOR FEEL — that is the current focus: the mini cannot render
-    bloom/audio/haptics, so shake/flash punch, the synth SFX/music mix, and haptic tiers are all device-only
-    tuning. #61 adaptive audio is PARTIAL (shipped fake-adaptive intensity stem + battery low-pass DSP hook;
-    beat/bass-envelope->grid-ripple pulse still TODO — left OPEN).
-    GOTCHA LEARNED THIS SESSION: a Node add_child()ed during a verify script's _initialize() has its _ready
-    DEFERRED under `-s` (same as autoloads) — pump `await process_frame` before asserting on the built tree
-    (see verify_gamefeel.gd). And a bare `Events` identifier won't compile in the `-s` MAIN tool script
-    (autoload globals not registered yet at its compile time) — use the root.get_node_or_null("Events") ref;
-    Palette.CONST works because it's const resolution.
-    DEPLOY is self-service + proven again this session: bump export_presets version -> Godot iOS export
-    (exit 1 EXPECTED) -> fastlane ios ship (self-unlocks keychain via NEON_KEYCHAIN_PW) -> status until VALID
-    (#14 took ~2 min) -> beta_submit build:N version:0.1.0 for external (distributed cleanly, NO spaceship
-    "Beta App Description missing" bug this time since 0.1.0 already cleared review). Re-ship if a build is
-    invisible >25 min (Apple ingestion stall).
-    DEVICE BACKLOG: confirm #76 notch fix on #14; glow/fonts/haptics/FPS only provable on iPhone (#47);
-    polish #77 (ship read, grid aesthetic, AMOLED contrast); #54/#34 consolidated device-perf gate.
+    Session 20 CLOSED OUT v0.4.0 — milestone now has 0 open issues. Both remaining items shipped/closed.
+    #61 (music-reactive audio) CLOSED: built the beat-reactive grid pulse. NEW Events.music_beat(strength);
+    AudioManager beat clock locked to the synthesized game bed's bass onsets (GAME_BED_DUR/GAME_BED_NOTES,
+    one beat/bass-note, downbeat emphasized; pure _beat_period/_beat_strength/_advance_beat_phase; emits in
+    _process; gated to the "game" bed, off for menu/stop/collapse); GridFloor.pulse_beat() global
+    brightness/warp breath w/ decay (BEAT_PULSE_DECAY, max-held) + _flush_beat + Events.music_beat wiring;
+    NEW `beat_pulse` shader uniform brightens the grid + swells warp on the bass. Deterministic + bass-aligned
+    by construction (no FFT). #53 (Entropy faction epic) CLOSED: was ALREADY fully built + live in build #14
+    (targets.gd — all archetypes + gate-hijack + multiply-through + batched damage/breach), so verified-not-
+    rebuilt; the deferred Singularity miniboss carved to NEW #83. Created NEW v0.5.0 epic #84 (Combat &
+    Economy Depth) as #53's successor, parenting #78/#79/#80/#82 + #83 (Singularity milestoned v0.5.0).
+    VALIDATION: --import clean + 11/11 headless verifies PASS (extended verify_audio beat clock, verify_grid
+    pulse decay + new shader uniform, verify_gamefeel live music_beat->GridFloor integration; full regression
+    green). NO new TestFlight build this session — build #14 still current; ship only when you want the grid
+    pulse + device polish on-device.
+    GOTCHAS still in force: a Node add_child()ed during a verify _initialize() has _ready DEFERRED under `-s`
+    (pump await process_frame before asserting — see verify_gamefeel); a bare `Events` won't compile in the
+    `-s` MAIN tool script (use root.get_node_or_null("Events")); GDScript const-arithmetic on a loaded
+    GDScript's consts needs an explicit type (`var x: float = float(AudioS.CONST)/...`) or type-infer fails.
+    Verify result FILES are hardcoded to /tmp/verify_<name>_result.txt — pass that exact path to run-headless.sh
+    or it polls the wrong file and reports a false NO-RESULT.
+    DEPLOY unchanged + proven: bump export_presets version -> Godot iOS export (exit 1 EXPECTED) -> fastlane
+    ios ship (self-unlocks keychain via NEON_KEYCHAIN_PW) -> status until VALID -> beta_submit build:N
+    version:0.1.0 for external. Re-ship if a build is invisible >25 min (Apple ingestion stall).
+    DEVICE BACKLOG (gated on a real iPhone, NOT blocking v0.5.0 design): tune beat-pulse/shake/flash/audio/
+    haptic FEEL; confirm #76 notch fix on #14; glow/fonts/FPS only provable on iPhone (#47); polish #77
+    (ship read, grid aesthetic, AMOLED contrast); #54/#34 consolidated device-perf gate.
     OPS: rotate the keychain password; remove Xcode-16.4.0.app (rollback condition long met).
 
 # =============================================================================
 # TRACKER
 # =============================================================================
 # GitHub Issues is the canonical task tracker (gh CLI).
-#   Epics:      type: epic   (one per implementation-plan phase, + enemy faction #53)
+#   Epics:      type: epic   (one per implementation-plan phase, + named epics: #53 enemy faction [CLOSED],
+#               #84 combat & economy depth [v0.5.0])
 #   Milestones: v0.1.0 ... v1.0.0 (the version ladder)
 #   Labels:     type / priority / effort / status / area
 tracker:

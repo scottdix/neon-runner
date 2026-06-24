@@ -39,6 +39,11 @@ const MAX_RIPPLES := 8
 ## Color-shift (#17): the last gate's tint fades out over this many seconds.
 const SHIFT_DECAY := 0.6
 
+## Beat pulse (#61 music-reactive): a music_beat arms a global brightness/warp "breath" at the
+## beat's strength, decaying to 0 over this many seconds — snappy so each beat reads as a
+## distinct throb rather than a smear.
+const BEAT_PULSE_DECAY := 0.26
+
 var _mat: ShaderMaterial
 var _design := Vector2(1080, 1920)
 ## The full-screen grid quad. Held so the size_changed handler can re-fit it to the ACTUAL
@@ -54,6 +59,9 @@ var _ripples: Array[Dictionary] = []
 ## is the current 0..1 strength.
 var _shift_color := Color(0.30, 0.30, 3.8, 1.0)
 var _shift: float = 0.0
+
+## Beat-pulse strength (0..1), armed by Events.music_beat and decayed in advance() (#61).
+var _beat_pulse: float = 0.0
 
 
 func _init() -> void:
@@ -103,6 +111,7 @@ func _ready() -> void:
 	Events.distance_changed.connect(_on_distance_changed)
 	Events.trigger_grid_ripple.connect(_on_grid_ripple)
 	Events.gate_passed.connect(_on_gate_passed)
+	Events.music_beat.connect(_on_music_beat)
 
 
 func _process(delta: float) -> void:
@@ -112,6 +121,7 @@ func _process(delta: float) -> void:
 	advance(delta)
 	_flush_ripples()
 	_flush_shift()
+	_flush_beat()
 
 
 # === Viewport coverage (#70 — kill the bottom band) ==========================
@@ -170,6 +180,8 @@ func advance(delta: float) -> void:
 			slot["age"] = 0.0
 	if _shift > 0.0:
 		_shift = maxf(0.0, _shift - delta / SHIFT_DECAY)
+	if _beat_pulse > 0.0:
+		_beat_pulse = maxf(0.0, _beat_pulse - delta / BEAT_PULSE_DECAY)
 
 
 ## Set the recent-action color-shift to full strength toward `color` (#17). Decays in
@@ -197,6 +209,17 @@ func ripple_slots() -> Array[Dictionary]:
 ## Current color-shift strength (0..1). Exposed so the verifier can watch the decay.
 func shift_amount() -> float:
 	return _shift
+
+
+## Arm the global beat "breath" to `strength` (0..1), decayed in advance() (#61). max() so a
+## weaker off-beat never cuts a stronger downbeat short. PURE — only mutates _beat_pulse.
+func pulse_beat(strength: float) -> void:
+	_beat_pulse = maxf(_beat_pulse, clampf(strength, 0.0, 1.0))
+
+
+## Current beat-pulse strength (0..1). Exposed so the verifier can watch the decay.
+func beat_pulse_amount() -> float:
+	return _beat_pulse
 
 
 ## Index of a free slot, or -1 if all are busy.
@@ -262,6 +285,13 @@ func _flush_shift() -> void:
 	_mat.set_shader_parameter("shift_amount", _shift)
 
 
+## Push the current beat-pulse strength to the shader (#61). No-op without a material.
+func _flush_beat() -> void:
+	if _mat == null:
+		return
+	_mat.set_shader_parameter("beat_pulse", _beat_pulse)
+
+
 # === Events wiring ===========================================================
 
 ## Scroll the grid in CELLS, derived from metres travelled on the shared projection so
@@ -283,6 +313,12 @@ func _on_grid_ripple(at: Vector2, is_implosion: bool) -> void:
 ## gate_type string (see gate.gd._op_string) to a Palette HDR colour; decays in advance().
 func _on_gate_passed(gate_type: String, _value: float, _new_count: int) -> void:
 	set_color_shift(_shift_color_for(gate_type))
+
+
+## A music beat landed (#61): arm the global brightness/warp breath at the beat's strength.
+## The pulse is pure state; the GPU sees it on the next _process flush (_flush_beat).
+func _on_music_beat(strength: float) -> void:
+	pulse_beat(strength)
 
 
 ## Gate-op → tint. Positive ops glow their own hue; subtract/divide use the "negative" red.

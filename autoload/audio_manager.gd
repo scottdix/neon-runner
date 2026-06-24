@@ -44,6 +44,19 @@ const SILENCE_DB := -60.0
 # Stem (intensity) ceiling in dB at full intensity; -inf-ish floor at zero.
 const STEM_MAX_DB := -6.0
 
+# --- Beat clock (#61 music-reactive grid) ------------------------------------
+# The "game" bed is GAME_BED_NOTES bass notes arpeggiated over GAME_BED_DUR seconds
+# (see _build_music_beds → _bed). The beat clock ticks ONE beat per note, so every emitted
+# beat lands exactly on a bass-note onset of the actual playing bed — the grid pulses to the
+# real bass envelope by construction, no FFT/spectrum read needed (and it stays deterministic
+# + headless-testable). BEATS_PER_BAR == GAME_BED_NOTES so beat 0 of each loop is the bar
+# downbeat (the bass root), emphasised over the off-beats.
+const GAME_BED_DUR := 2.0
+const GAME_BED_NOTES := 3
+const BEATS_PER_BAR := GAME_BED_NOTES
+const BEAT_DOWN_STRENGTH := 1.0       # bar downbeat (bass root) — the strong pulse
+const BEAT_OFF_STRENGTH := 0.55       # off-beats — a gentler breath
+
 # --- Runtime nodes (built in _ready; null on a bare .new()) ------------------
 var _sfx_players: Array[AudioStreamPlayer] = []
 var _next_sfx: int = 0
@@ -56,6 +69,12 @@ var _music_current_db: float = SILENCE_DB
 # Stem (intensity) fade state.
 var _stem_target_db: float = SILENCE_DB
 var _stem_current_db: float = SILENCE_DB
+
+# Beat clock state (#61). Only ticks while the driving game bed is the active music
+# (set in play_music); _process advances the phase and emits Events.music_beat per onset.
+var _beat_enabled: bool = false
+var _beat_phase: float = 0.0          # seconds into the current beat (wraps at the period)
+var _beat_index: int = 0              # beats since the bed started (index % BEATS_PER_BAR → bar pos)
 
 # The synthesised sound table + named music beds (built once; pure builders below).
 var _sfx: Dictionary = {}                      # name -> AudioStreamWAV
@@ -80,6 +99,14 @@ func _process(delta: float) -> void:
 	if _stem_player != null and not is_equal_approx(_stem_current_db, _stem_target_db):
 		_stem_current_db = move_toward(_stem_current_db, _stem_target_db, MUSIC_FADE_SPEED * 60.0 * delta)
 		_stem_player.volume_db = _stem_current_db
+	# Beat clock (#61): while the game bed plays, advance the phase and fire a music_beat on each
+	# bass-note onset crossed this frame. GridFloor catches it as a pulse. PURE advance below.
+	if _beat_enabled:
+		var step: Dictionary = _advance_beat_phase(_beat_phase, delta, _beat_period())
+		_beat_phase = float(step["phase"])
+		for _i in int(step["fired"]):
+			Events.music_beat.emit(_beat_strength(_beat_index))
+			_beat_index += 1
 
 
 # --- Bus / player construction (hardware; guarded, idempotent) ---------------
@@ -196,10 +223,19 @@ func play_music(track: String, fade: float = 0.6) -> void:
 	if not Settings.music_enabled:
 		# Master off — keep it silent but remember intent is "stopped".
 		_music_target_db = SILENCE_DB
+		_beat_enabled = false
 		return
 	var bed: AudioStreamWAV = _music_beds.get(track, null)
 	if bed == null:
 		return
+	# Beat clock (#61): only the driving "game" bed pulses the grid. Reset the phase to the
+	# downbeat when entering game music (but not on a redundant same-track call, so the pulse
+	# never stutters). Other beds (menu) disable it.
+	var want_beats := track == "game"
+	if want_beats and not _beat_enabled:
+		_beat_phase = 0.0
+		_beat_index = 0
+	_beat_enabled = want_beats
 	# Swap the bed only if it changed, so a redundant call doesn't restart the loop.
 	if _music_player.stream != bed:
 		_music_player.stream = bed
@@ -217,6 +253,7 @@ func play_music(track: String, fade: float = 0.6) -> void:
 func stop_music() -> void:
 	_music_target_db = SILENCE_DB
 	_stem_target_db = SILENCE_DB
+	_beat_enabled = false
 
 
 ## #61 fake-adaptive layer: crossfade the intensity STEM in/out. `level` is 0..1; the stem
@@ -292,6 +329,30 @@ func _combo_pitch(combo: int) -> float:
 ## in across a wide count range rather than snapping. PURE.
 func _intensity_for_count(count: int) -> float:
 	return clampf(float(maxi(count, 0)) / 600.0, 0.0, 1.0)
+
+
+## Seconds per beat — one beat per bass note of the game bed, so beats land on the bed's note
+## onsets exactly. PURE. > 0 as long as GAME_BED_NOTES > 0.
+func _beat_period() -> float:
+	return GAME_BED_DUR / float(maxi(GAME_BED_NOTES, 1))
+
+
+## Strength (0..1) of the beat at absolute `index`: the bar DOWNBEAT (the bass root, index
+## divisible by BEATS_PER_BAR) is strongest; the off-beats are gentler. PURE.
+func _beat_strength(index: int) -> float:
+	return BEAT_DOWN_STRENGTH if index % BEATS_PER_BAR == 0 else BEAT_OFF_STRENGTH
+
+
+## Advance the beat phase by `delta`, returning {phase, fired}: `phase` is the remaining
+## sub-beat time (always < period), `fired` is how many beat onsets were crossed this frame
+## (handles a long delta after a stall). PURE — no signals/nodes; _process emits per `fired`.
+func _advance_beat_phase(phase: float, delta: float, period: float) -> Dictionary:
+	var p := phase + maxf(delta, 0.0)
+	var fired := 0
+	while period > 0.0 and p >= period:
+		p -= period
+		fired += 1
+	return {"phase": p, "fired": fired}
 
 
 # --- PURE synthesis (the testable core) --------------------------------------
@@ -458,7 +519,10 @@ func _build_sfx_table() -> Dictionary:
 ## LOOP_FORWARD so the player loops seamlessly. _ready stashes in `_music_beds`.
 func _build_music_beds() -> Dictionary:
 	var beds := {}
-	beds["game"] = _loopify(_bed([220.0, 277.18, 329.63], 2.0, "saw"))     # A minor-ish driving bed
+	# Game bed: GAME_BED_NOTES bass notes over GAME_BED_DUR — the beat clock ticks one beat per
+	# note (see _beat_period), so a music_beat fires on each of these onsets. Keep the note count
+	# == GAME_BED_NOTES so the two stay locked.
+	beds["game"] = _loopify(_bed([220.0, 277.18, 329.63], GAME_BED_DUR, "saw"))  # A minor-ish driving bed
 	beds["menu"] = _loopify(_bed([196.0, 246.94, 293.66], 3.0, "sine"))    # calmer G bed
 	beds["stem"] = _loopify(_bed([440.0, 554.37, 659.25], 2.0, "square"))  # bright upper layer (#61)
 	return beds

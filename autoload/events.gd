@@ -86,6 +86,12 @@ signal trigger_screen_shake(intensity: float, duration: float)
 ## emitted on impactful beats (gate hijack denied / breach / collapse) alongside shake.
 signal trigger_screen_flash(color: Color, duration: float)
 signal trigger_grid_ripple(position: Vector2, is_implosion: bool)
+## A music BEAT landed (#61 adaptive audio). AudioManager runs a beat clock locked to the
+## game bed's bass-note tempo and emits this on each onset; `strength` is 0..1 with the bar
+## DOWNBEAT (the bass root) strongest. GridFloor turns it into a global brightness/warp
+## "breath" so the grid pulses to the music — the music-reactive half of #61 (the gameplay
+## ripples on trigger_grid_ripple are the action-reactive half).
+signal music_beat(strength: float)
 ## A swarm-volume milestone was crossed (#28). The MilestoneBanner watches
 ## projectile_count_changed and emits this once per threshold (100/500/1000) so audio
 ## (fanfare), haptics (heavy), and effects can punctuate the celebration. `count` is the
