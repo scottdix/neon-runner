@@ -4,39 +4,34 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-23"
-  session: 17
+  session: 18
   notes: >
+    Session 18 (DESIGN-ONLY — review of Patrick's TestFlight gameplay feedback; NO code, #23 untouched and
+    still the coding focus). Turned 5 tester points into a depth pass on the combat/economy, backed by a
+    5-agent Opus research dive (gate-runner genre, build-craft bullet-hells, roguelite economies, decision
+    theory, game-feel) → NEW docs/design/GATE_ECONOMY.md (full reasoning + sources). NEW ISSUES: #78 Splice
+    Lab economy (between-run RNG perk draft + enemy token drops), #79 gate-economy depth (Spray<->Lance
+    stance + threat triangle — THE keystone; priority:high; written theme-agnostic), #80 Easy/Med/Hard
+    difficulty, #81 ICEBOX/V2 twin-stick arena mode, #82 boss encounters (end-of-run climax, vary-only
+    control) — #78/#79/#80/#82 all v0.5.0. COMMENTS: #42 weapon-state readability ("show the spread"),
+    #78 in-run pickups = tokens only for v1, #59 absorbed the salvaged pacing concepts. CLEANUP: closed the
+    stale adaptive-difficulty epic #29-33 (GAME_SCOPE D4 demoted it) — per-phase intensity knobs + rest
+    zones folded into #59; #33 adaptive deaths/successes loop killed outright (player-facing difficulty is
+    now #80). LOCKED: Spray/Lance discrete+flippable; Rhombus immunity scales with difficulty (hard=immune);
+    meta horizontal not stat-creep; end-of-run boss first; bosses vary one-thumb control (no new schemes);
+    in-run pickups = tokens. PARKED: the "math" theme reskin (kept out of #79's mechanic so it doesn't
+    block), stance-flip cost, in-run consumables, debut boss (Singularity?). FOLLOW-UP: update GAME_SCOPE
+    §4.2-4.4 to the stance model + elevated boss role — deferred until the math-theme question resolves.
+  previous_notes: >
     Session 17 (DEVICE-FEEDBACK TRIAGE; #23 untouched, still next). Short session that CLOSED OUT the
     v0.3.0 (Visual Polish) milestone — now 0 open — and fixed a real device bug on build #13. Closed the
     three device-validation tails: #72 (in-run ship matches Garage — device-confirmed), #71 (grid restyle
-    improved on device), #66 (AMOLED mode functionally correct + persists, but effect is subtle because
-    BG_STANDARD (0.008,0.012,0.04) is already near-black so pure-black contrast is small in normal light).
-    NEW #76 — COMBO/battery readout was clipped by the iPhone 12/12 Pro notch (HUD top row at y≈70 sat
-    under the top safe-area inset): run.gd now has _safe_top_inset() (DisplayServer.get_display_safe_area()
-    → canvas units, uniform under stretch=expand) and shifts SCORE/COMBO/pause + battery strip down by it;
-    0 on notchless/headless so layout unchanged. VERIFY: verify_scene PASS on real run.tscn. NEW #77 —
-    consolidated visual-polish backlog (ship read, grid aesthetic, AMOLED contrast) for a future polish
-    phase. NO new build shipped — user chose to BATCH the #76 notch fix with #23 rather than ship build #14
-    for one cosmetic shift; confirm #76 on device whenever the next build goes out. Stale session-16
-    "build 13 VALID" background poll timed out + surfaced — moot (#13 long since VALID).
-  previous_notes: >
-    Session 16 (DEVICE FEEDBACK → FIX → SHIP; a detour from #23, which is untouched). Pulled TestFlight
-    beta feedback from the ASC API (betaFeedbackScreenshotSubmissions, app id 6782516475, Spaceship JWT;
-    method saved in agent-memory testflight-feedback-retrieval.md). Logged 6 build-#11 items #70-#75, then
-    fixed ALL via an ultracode Workflow (5 file-disjoint slices) + serialized headless verify:
-    #70 grid black band (grid_floor rect fills REAL viewport, not fixed 1920), #71 grid restyle (depth
-    falloff + calmer warp), #72 ship==Garage (shared build_ship_preview path), #73 Splice Lab (hardened
-    tap targets + REAL fix: apply_splice ran before _volume seed), #74 Rhombus armor lockout (chip floor),
-    #75 battery → thin top strip. Caught 2 harness bugs in verify (MultiMesh readback is black headless;
-    _ready doesn't fire under -s) + fixed the tests; new tools/verify_splice.gd. Shipped build #12 (the 6
-    fixes) — it STALLED in Apple ingestion (>16 min, never appeared), superseded. Round-2 device feedback:
-    ship stuck high/small/pointing-down + run too short → ship line now from REAL viewport height (near
-    actual bottom), SHIP_QUAD 96->168, img.flip_y() so nose points UP (QuadMesh renders textures V-flipped);
-    run length_m 320->640 (40s->80s) + extended schedule (13 gate formations / 14 enemy waves). Shipped
-    build #13 (everything) => VALID (user-confirmed; black band confirmed gone on device). VERIFY: full
-    suite green — 13 suites incl verify_scene (real run.tscn) + verify_splice (neutral 50 -> spliced 200
-    shots through step()). Device-validation tail on #13 (ship look/orientation, grid restyle, Splice
-    tappability, longer-run feel); #71/#72 kept open for it.
+    improved on device), #66 (AMOLED mode functionally correct + persists but subtle — BG_STANDARD is
+    already near-black). NEW #76 — COMBO/battery readout was clipped by the iPhone 12/12 Pro notch; run.gd
+    _safe_top_inset() (DisplayServer.get_display_safe_area() → canvas units) shifts the HUD top row below
+    the top safe-area inset, 0 on notchless/headless; verify_scene PASS. NEW #77 — consolidated visual-
+    polish backlog. NO new build shipped — user batched the #76 notch fix with #23 rather than ship build
+    #14 for one cosmetic shift; confirm #76 on device whenever the next build goes out.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
@@ -47,11 +42,12 @@ focus:
   current_issue: "#23 — [Gameplay] Implement feedback manager (screen shake, flash). Wire the already-declared Events.trigger_screen_shake (+ a white-flash hook) into the Run scene as a FeedbackManager, consumed by HUD/camera. This is the v0.4.0 foundation the rest of Game Feel (combo/score-popups/milestones/audio) builds on."
   next_issue: "#24 — [Audio] Create audio manager with sound pooling (then #25 SFX for all game events, #26 combo system, #27 score popups, #28 milestone celebrations; #65 Haptics + #61 adaptive audio also live in v0.4.0)."
   notes: >
-    Session 17 closed out the v0.3.0 (Visual Polish) milestone — now 0 open (#72/#71/#66 device-validated +
-    closed; #66 AMOLED is functionally correct but subtle, contrast tuning parked in polish backlog #77) —
-    and fixed #76 (COMBO/battery clipped by the iPhone 12/12 Pro notch: run.gd _safe_top_inset() shifts the
-    HUD top row below the device top safe-area inset; 0 on notchless/headless; verify_scene PASS). #23 is
-    STILL UNTOUCHED and REMAINS the current coding focus.
+    Session 18 was DESIGN-ONLY (Patrick's TestFlight feedback → a v0.5.0 combat/economy depth pass; see NEW
+    docs/design/GATE_ECONOMY.md + issues #78-82). The v0.5.0 depth cluster now has design intent: #79
+    Spray<->Lance gate economy (keystone, priority:high), #78 Splice Lab token economy, #82 bosses, #80
+    difficulty; the stale adaptive-difficulty epic #29-33 was closed (folded into #59). NO code this session
+    — #23 is STILL UNTOUCHED and REMAINS the current coding focus. The "math" theme reskin is a PARKED open
+    question (kept out of #79's mechanic); GAME_SCOPE §4.2-4.4 needs a sync once it resolves.
     START with #23 FeedbackManager: the Events bus already DECLARES trigger_screen_shake(intensity,duration)
     but NOTHING emits or consumes it — build a FeedbackManager in the Run scene that listens (camera offset
     shake + a white screen-flash) and have enemy_destroyed/enemy_breached/gate_passed/gate_hijack_blocked
