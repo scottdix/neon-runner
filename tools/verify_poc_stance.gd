@@ -52,7 +52,7 @@ func _initialize() -> void:
 	var pl: Node2D = PlayerS.new()
 	var fast := [pl.call("register_tap", 0), pl.call("register_tap", 100), pl.call("register_tap", 200)]
 	# After firing it resets, so the next two are false then the 3rd of a fresh burst fires.
-	var post := pl.call("register_tap", 300)
+	var post: bool = pl.call("register_tap", 300)
 	# A stale burst: gaps wider than the window never accumulate 3.
 	var slow := [pl.call("register_tap", 1000), pl.call("register_tap", 2000), pl.call("register_tap", 3000)]
 	lines.append("triple-tap: fast=%s post-reset=%s slow=%s" % [fast, post, slow])
