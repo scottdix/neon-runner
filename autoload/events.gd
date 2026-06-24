@@ -162,6 +162,27 @@ signal draft_changed
 ## `config` carries {grid_mode, spawn_density_mult, gate_speed_mult, gate_moving, gravity}.
 ## v1 consumers: grid_floor may read grid_mode; spawn/gate consumption is deferred.
 signal phase_changed(phase_index: int, phase_name: String, config: Dictionary)
+# --- Combat redesign POCs (#86/#87) ------------------------------------------
+## The pre-run POC stance-driver mode changed (LEGACY / KINETIC_CLUTCH / GEOM_OVERDRIVE). Emitted
+## ONLY by Settings.set_poc_mode on an actual change; the Settings selector relights and the run's
+## StanceController re-reads the active mode. Single owner = Settings (persists the int). The mode
+## is LOCKED IN before a run starts (designer's call) — not hot-swapped mid-run.
+signal poc_mode_changed(mode: int)
+## GEOM_OVERDRIVE (POC 4) charge changed (#87). `value`/`max_value` are in 0..max. Kills feed it
+## (GameState.add_geom on enemy_destroyed); the overdrive LANCE burn drains it. HUD/gauge bind this.
+signal geom_changed(value: float, max_value: float)
+## GEOM_OVERDRIVE (POC 4) entered/left the LANCE "smart-bomb" overdrive (#87). run.gd spikes the
+## bloom + trauma on true and relaxes on false; the Fleet boosts its per-instance weight while active.
+signal overdrive_changed(active: bool)
+## A TRIPLE-TAP was registered (#87) — GEOM_OVERDRIVE's LANCE activation gesture (replaces swipe-up,
+## which would fight drag-steer). Emitted by Player.register_tap on the 3rd tap in-window; the
+## StanceController toggles overdrive on it. Inert in the other POC modes.
+signal overdrive_toggle_requested
+## The Walled Gauntlet (#86) clamped/released the ship's steerable x-range. `min_x`/`max_x` are the
+## active steer bounds: a sub-range LOCKS the ship into one lane (the 7-s commitment), the full
+## steerable width RELEASES it. Player binds this and intersects it into its set_target_x clamp.
+signal lane_clamp_changed(min_x: float, max_x: float)
+
 ## A gravity field is active (PhaseDirector when the live phase's gravity != 0; the Singularity
 ## boss REUSES this — there is no boss-specific gravity signal). `direction` is a NORMALIZED unit
 ## pull vector; `strength` is a NORMALIZED 0..1 magnitude (BOTH emitters honour this one unit so a

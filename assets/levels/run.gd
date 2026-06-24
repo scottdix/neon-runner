@@ -54,6 +54,10 @@ const TOKEN_LAYER_SCRIPT := preload("res://assets/economy/token_layer.gd")
 const PHASE_DIRECTOR_SCRIPT := preload("res://assets/levels/phase_director.gd")
 const PERF_OVERLAY_SCRIPT := preload("res://assets/ui/perf_overlay.gd")
 const VIEWPORT_CULL_SCRIPT := preload("res://assets/levels/viewport_cull.gd")
+# Combat-redesign POCs (#86/#87): the stance driver (KINETIC/GEOM, gated on Settings.poc_mode) and the
+# Walled Gauntlet lane-commitment obstacle. Preloaded by PATH (headless parse rule, as above).
+const STANCE_CONTROLLER_SCRIPT := preload("res://assets/player/stance_controller.gd")
+const WALLED_GAUNTLET_SCRIPT := preload("res://assets/obstacles/walled_gauntlet.gd")
 
 var _player: Node2D
 var _fleet: Node2D
@@ -88,8 +92,15 @@ var _boss_name_label: Label
 var _boss_prompt_label: Label
 # #79 persistent STANCE indicator (visible the WHOLE run, not just the boss).
 var _stance_label: Label
+# #87 GEOM_OVERDRIVE charge gauge — a thin bar that fills from kills + drains on the LANCE burn.
+var _geom_fill: ColorRect
 var _token_layer: Node2D
 var _phase_director: Node
+# #86/#87 combat POCs.
+var _stance_controller: Node
+var _gauntlet: Node2D
+# #87 GEOM_OVERDRIVE bloom spike: the env glow values to relax back to after an overdrive burn ends.
+var _overdrive_tween: Tween
 var _perf: CanvasLayer
 var _cull: Node
 var _score_value: Label
@@ -229,6 +240,26 @@ func _ready() -> void:
 	_cull.add_target(_fleet)
 	_cull.set_band(0.0, screen_h)
 
+	# --- Combat-redesign POCs (#86/#87) ---
+	# Stance driver: gated on Settings.poc_mode (LEGACY = idle, gates drive stance as before). Added
+	# BEFORE start_run so its game_started handler caches the mode for this run. Injected the Player
+	# so KINETIC_CLUTCH can poll its derived velocity.
+	_stance_controller = STANCE_CONTROLLER_SCRIPT.new()
+	_stance_controller.name = "StanceController"
+	add_child(_stance_controller)
+	_stance_controller.set_player(_player)
+	# Walled Gauntlet: the lane-commitment obstacle. A world sibling added after Targets + Gates so it
+	# can inject occupants (Targets.spawn_add) + lane gates (GateSpawner.spawn_split); it clamps the
+	# ship via the bus (Events.lane_clamp_changed). One gauntlet fires per run at its authored start_m.
+	_gauntlet = WALLED_GAUNTLET_SCRIPT.new()
+	_gauntlet.name = "WalledGauntlet"
+	add_child(_gauntlet)
+	_gauntlet.set_targets(_targets)
+	_gauntlet.set_gates(_gates)
+	_gauntlet.set_ship_line(ship_pos.y)
+	# #87 GEOM_OVERDRIVE: spike the bloom (and trauma) on the LANCE smart-bomb burn, relax on exit.
+	Events.overdrive_changed.connect(_on_overdrive_changed)
+
 	_build_hud()
 	# Run no longer reacts to the run terminals — SceneManager listens for run_completed /
 	# grid_collapsed and swaps to the Results screen (#44), freeing this scene.
@@ -242,6 +273,7 @@ func _ready() -> void:
 	Events.boss_spawned.connect(_on_boss_spawned)          # #82/#83 reveal + seed the boss HUD
 	Events.boss_phase_changed.connect(_on_boss_phase_changed)  # #82/#83 phase telegraph + action prompt
 	Events.stance_changed.connect(_on_stance_changed)      # #79 persistent stance indicator
+	Events.geom_changed.connect(_on_geom_changed)          # #87 GEOM_OVERDRIVE charge gauge
 
 	GameState.start_run()
 	# The level owns the segment schedule (#13): hand the gate formations + enemy waves
@@ -464,6 +496,15 @@ func _update_boss_hud() -> void:
 	_boss_hp_fill.size.x = _boss_hud_bar_width() * frac
 
 
+## #87: the GEOM_OVERDRIVE charge changed — resize the gauge fill. start_run emits geom_changed(0) so
+## this initialises to empty at the top of a run. The fill is a fixed 360 px track (matches _build_hud).
+func _on_geom_changed(value: float, max_value: float) -> void:
+	if _geom_fill == null:
+		return
+	var frac: float = clampf(value / maxf(max_value, 1.0), 0.0, 1.0)
+	_geom_fill.size.x = 360.0 * frac
+
+
 func _on_battery_changed(value: float, max_value: float) -> void:
 	if _battery_fill == null:
 		return
@@ -584,6 +625,25 @@ func _build_hud() -> void:
 	_stance_label.position = Vector2(0.0, BATTERY_TOP + 24.0 + top)
 	layer.add_child(_stance_label)
 
+	# #87 GEOM_OVERDRIVE charge gauge — a thin centred bar under the stance label. Fills from kills
+	# (GameState.add_geom) and drains on the LANCE smart-bomb burn; a triple-tap with charge in the
+	# tank fires the overdrive. Present every run (kills always feed it); only the GEOM POC spends it.
+	const GEOM_BAR := Vector2(360.0, 8.0)
+	var geom_x: float = (UI.DESIGN.x - GEOM_BAR.x) * 0.5
+	var geom_y: float = BATTERY_TOP + 72.0 + top
+	var geom_track := ColorRect.new()
+	geom_track.name = "GeomTrack"
+	geom_track.position = Vector2(geom_x, geom_y)
+	geom_track.size = GEOM_BAR
+	geom_track.color = Palette.BATTERY_TRACK_HUD
+	layer.add_child(geom_track)
+	_geom_fill = ColorRect.new()
+	_geom_fill.name = "GeomFill"
+	_geom_fill.position = Vector2(geom_x, geom_y)
+	_geom_fill.size = Vector2(0.0, GEOM_BAR.y)        # seeded by geom_changed(0) at start_run
+	_geom_fill.color = Palette.MENU_MAGENTA_HUD
+	layer.add_child(_geom_fill)
+
 	# #82/#83 BOSS HUD — HP bar + phase telegraph + action prompt. Built hidden; revealed by
 	# boss_spawned, hidden again on defeat. Pinned to the top of the playfield (below the status row).
 	_build_boss_hud(layer, top)
@@ -680,3 +740,25 @@ func _apply_display_mode(amoled: bool) -> void:
 
 func _on_amoled_mode_changed(enabled: bool) -> void:
 	_apply_display_mode(enabled)
+
+
+## #87 GEOM_OVERDRIVE: the LANCE "smart-bomb" overdrive entered/left. On enter, spike the bloom
+## (glow_intensity/bloom) and slam a burst of camera trauma so the burn reads heavy; on exit, tween the
+## bloom back to the display mode's baseline. Guard-safe headless (no _env / no FeedbackManager == no-op
+## visual; the gameplay state still flips in GameState). The trauma goes out on the shared shake bus.
+func _on_overdrive_changed(active: bool) -> void:
+	if _overdrive_tween != null and _overdrive_tween.is_valid():
+		_overdrive_tween.kill()
+	if active:
+		Events.trigger_screen_shake.emit(0.55, 0.4)
+		if _env != null:
+			_overdrive_tween = create_tween().set_parallel(true)
+			_overdrive_tween.tween_property(_env, "glow_intensity", 2.6, 0.12)
+			_overdrive_tween.tween_property(_env, "glow_bloom", 0.32, 0.12)
+	else:
+		# Relax to the active display mode's baseline (AMOLED dims both; standard is the neon path).
+		var amoled: bool = Settings.amoled_mode
+		if _env != null:
+			_overdrive_tween = create_tween().set_parallel(true)
+			_overdrive_tween.tween_property(_env, "glow_intensity", 1.0 if amoled else 1.4, 0.3)
+			_overdrive_tween.tween_property(_env, "glow_bloom", 0.08 if amoled else 0.15, 0.3)

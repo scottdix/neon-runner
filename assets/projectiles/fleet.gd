@@ -49,6 +49,10 @@ const TIER_COLORS: Array[Color] = [
 ]
 ## Per-tier instance scale multiplier — higher tiers render fatter orbs.
 const TIER_SCALE: Array[float] = [1.0, 1.08, 1.18, 1.30, 1.45]
+## #87 GEOM_OVERDRIVE render boost: while the overdrive burns, every orb is fatter + brighter so the
+## stream reads as a heavy smart-bomb column. Cosmetic (applied in _render only) — never touches the sim.
+const OVERDRIVE_SCALE_BOOST := 1.6
+const OVERDRIVE_COLOR_BOOST := 1.5
 ## How long a tier-down shatter shard lives (a one-frame-ish cosmetic pop, like a spark).
 const SHATTER_LIFE := 0.18
 
@@ -419,6 +423,11 @@ func _render() -> void:
 	var tier: int = clampi(_current_tier(), 0, TIER_COUNT - 1)
 	var tier_col: Color = TIER_COLORS[tier]
 	var tier_scale: float = TIER_SCALE[tier]
+	# #87 GEOM_OVERDRIVE: while the LANCE "smart-bomb" overdrive burns, fatten + brighten every orb so
+	# the stream reads as a heavy column of fire (the visual weight the POC wants). Cosmetic only.
+	if GameState.overdrive_active:
+		tier_col = tier_col * OVERDRIVE_COLOR_BOOST
+		tier_scale *= OVERDRIVE_SCALE_BOOST
 	# Instances are positioned in this node's local space; subtract our origin.
 	for i in n:
 		var local := _proj[i] - position

@@ -36,6 +36,15 @@ var best_score: int = 0
 ## The Difficulty autoload maps it to a DifficultyProfile; persisted here under PROGRESS.
 var difficulty: int = 1
 
+## Combat-redesign POC stance driver (#86/#87), LOCKED IN before a run starts (designer's call):
+##   LEGACY         — today's gate-polarity stance (baseline / control).
+##   KINETIC_CLUTCH — stance follows ship motion (moving=SPRAY, braked=LANCE).
+##   GEOM_OVERDRIVE — default SPRAY; a triple-tap burns kill-fed geom_charge for a LANCE overdrive.
+## Default LEGACY so an un-touched install plays the shipped combat. Persisted under PROGRESS; the
+## run's StanceController reads it at game_started. Selected on the Settings screen (device-friendly).
+enum PocMode { LEGACY, KINETIC_CLUTCH, GEOM_OVERDRIVE }
+var poc_mode: int = PocMode.LEGACY
+
 
 func _ready() -> void:
 	load_settings()
@@ -92,6 +101,19 @@ func set_difficulty(mode: int) -> void:
 	Events.difficulty_changed.emit(difficulty)
 
 
+## Set the POC stance-driver mode (#86/#87): clamp to 0..2, no-op on no change, persist, announce on
+## the Events bus. The run's StanceController re-reads the active mode (it caches at game_started, so
+## the change takes effect on the NEXT run — intentional, the mode is locked in pre-run); any open
+## Settings selector relights. Settings is the SINGLE owner of the persisted int.
+func set_poc_mode(mode: int) -> void:
+	var m: int = clampi(mode, 0, 2)
+	if m == poc_mode:
+		return
+	poc_mode = m
+	save_settings()
+	Events.poc_mode_changed.emit(poc_mode)
+
+
 ## Record a finished run's score; persists + returns true if it beat the previous best
 ## (Results shows the NEW BEST badge on a true). No-op-returns-false for a tie/lower.
 func record_score(s: int) -> bool:
@@ -114,6 +136,7 @@ func load_settings() -> void:
 	perf_overlay_enabled = bool(cfg.get_value(SECTION, "perf_overlay_enabled", perf_overlay_enabled))
 	best_score = int(cfg.get_value(PROGRESS, "best_score", best_score))
 	difficulty = clampi(int(cfg.get_value(PROGRESS, "difficulty", difficulty)), 0, 2)
+	poc_mode = clampi(int(cfg.get_value(PROGRESS, "poc_mode", poc_mode)), 0, 2)
 
 
 func save_settings() -> void:
@@ -125,4 +148,5 @@ func save_settings() -> void:
 	cfg.set_value(SECTION, "perf_overlay_enabled", perf_overlay_enabled)
 	cfg.set_value(PROGRESS, "best_score", best_score)
 	cfg.set_value(PROGRESS, "difficulty", difficulty)
+	cfg.set_value(PROGRESS, "poc_mode", poc_mode)
 	cfg.save(CONFIG_PATH)

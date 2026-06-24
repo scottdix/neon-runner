@@ -100,6 +100,28 @@ func build_formations(specs: Array) -> void:
 		_formations.append({"track_m": s["m"], "left": left, "right": right, "triggered": false})
 
 
+## APPEND one ad-hoc Split Choice formation mid-run (#86 Walled Gauntlet lane gates), WITHOUT
+## clearing the authored schedule (unlike build_formations). A left gate spans the left lane (0..540)
+## and a right gate the right lane (540..1080); as the formation crosses the line, update()'s existing
+## contains_x logic fires ONLY the gate in the lane the ship is committed to — exactly the lane choice
+## the gauntlet wants. Reuses the normal Gate path (configure + trigger -> gate_passed -> GameState),
+## so there is no parallel economy code. `*_op` are Gate op strings ("add"/"sub"/"mul"/"div").
+func spawn_split(track_m: float, left_op: String, left_val: float, right_op: String, right_val: float) -> void:
+	var left: Node2D = GATE.new()
+	left.name = "GauntletGateL_%d" % int(track_m)
+	left.configure(GATE.op_from_string(left_op), left_val, 0.0, LANE_SPLIT, LEFT_CENTER)
+	left.hijack_id = _next_gate_id
+	_next_gate_id += 1
+	var right: Node2D = GATE.new()
+	right.name = "GauntletGateR_%d" % int(track_m)
+	right.configure(GATE.op_from_string(right_op), right_val, LANE_SPLIT, 1080.0, RIGHT_CENTER)
+	right.hijack_id = _next_gate_id
+	_next_gate_id += 1
+	add_child(left)
+	add_child(right)
+	_formations.append({"track_m": track_m, "left": left, "right": right, "triggered": false})
+
+
 ## Newly-built hijacked gates still needing a parked occupant; returned ONCE then
 ## cleared (Targets pulls these each step and spawns one enemy per id).
 func take_pending_hijacks() -> Array:

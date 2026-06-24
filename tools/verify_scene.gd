@@ -87,7 +87,11 @@ func _process(_delta: float) -> bool:
 	# Events autoload's connection list — the scene's _ready must have wired each.
 	var ev: Node = root.get_node_or_null("Events")
 	if ev != null:
-		for sig in ["boss_spawned", "boss_phase_changed", "stance_changed"]:
+		# #86/#87 added the combat-POC signals; assert the run scene wires each (lane_clamp_changed ->
+		# Player, overdrive_toggle_requested -> StanceController, overdrive_changed + geom_changed -> run.gd)
+		# so the same "verified-but-dead" class the dead Singularity gravity shipped as can't pass again.
+		for sig in ["boss_spawned", "boss_phase_changed", "stance_changed",
+				"lane_clamp_changed", "overdrive_toggle_requested", "overdrive_changed", "geom_changed"]:
 			var conns: int = ev.get_signal_connection_list(sig).size()
 			_lines.append("wiring: Events.%s connections=%d" % [sig, conns])
 			if conns <= 0:

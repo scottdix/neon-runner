@@ -23,6 +23,22 @@ var _target_x: float = 540.0
 var _min_x: float = 80.0
 var _max_x: float = 1000.0
 
+# --- Combat-redesign POC input (#86/#87) -------------------------------------
+## Horizontal ship velocity (px/s), measured in step() from the per-frame position delta. The
+## KINETIC_CLUTCH POC (#87) reads it via velocity_x(): moving => SPRAY, braked/still => LANCE. The
+## ship is position/lerp-driven (no native velocity), so we derive it; pure so headless tests assert it.
+var _velocity_x: float = 0.0
+## Walled Gauntlet (#86) lane clamp: an EXTRA steer-bound override that, while active, traps the ship
+## in one lane. Defaults to the full steerable width (no clamp); the gauntlet narrows it via
+## Events.lane_clamp_changed and restores the full width to release. set_target_x intersects it.
+var _lane_min: float = -1.0e9
+var _lane_max: float = 1.0e9
+## Triple-tap detector (#87) for GEOM_OVERDRIVE's LANCE activation (replaces swipe-up, which would
+## fight drag-steer). Timestamps (ms) of recent taps; 3 within TRIPLE_TAP_WINDOW_MS fires the toggle.
+const TRIPLE_TAP_WINDOW_MS := 450
+const TRIPLE_TAP_COUNT := 3
+var _tap_times: Array[int] = []
+
 ## The ship's MultiMesh instance, kept so the loadout hull colour can be re-applied live.
 var _ship_mesh: MultiMeshInstance2D
 
@@ -74,6 +90,9 @@ func _ready() -> void:
 		"display/window/size/viewport_width", 1080))
 	_min_x = edge_margin
 	_max_x = _design_width - edge_margin
+	# #86: start unclamped (full steerable width); the Walled Gauntlet narrows this to one lane.
+	_lane_min = _min_x
+	_lane_max = _max_x
 	if position.x <= 0.0:
 		position.x = _design_width * 0.5
 	_target_x = position.x
@@ -84,6 +103,8 @@ func _ready() -> void:
 	# Recolour/retune live when the player changes hull/trail/engine in the Garage
 	# (CLAUDE.md: bus, no refs).
 	Events.loadout_changed.connect(_on_loadout_changed)
+	# #86: the Walled Gauntlet clamps/releases the steerable range via the bus (no direct ref).
+	Events.lane_clamp_changed.connect(_on_lane_clamp_changed)
 
 
 # --- Ship visual -------------------------------------------------------------
@@ -334,6 +355,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		set_target_x(event.position.x)
 	elif event is InputEventScreenTouch and event.pressed:
 		set_target_x(event.position.x)
+		# #87 GEOM_OVERDRIVE: a TRIPLE-TAP toggles the LANCE overdrive. The tap still steers (sets
+		# target_x to the tap x — expected; you tap where you are), so steering is unaffected.
+		if register_tap(Time.get_ticks_msec()):
+			Events.overdrive_toggle_requested.emit()
 
 
 func _process(delta: float) -> void:
@@ -352,8 +377,12 @@ func _process(delta: float) -> void:
 ## Also samples the post-move position into the trail ring-buffer (pure), so the
 ## trail follows even when driven headless.
 func step(delta: float) -> void:
+	var prev_x: float = position.x
 	var t: float = 1.0 - pow(0.0001, delta * (steer_responsiveness / 12.0))
 	position.x = lerpf(position.x, clampf(_target_x, _min_x, _max_x), t)
+	# #87 KINETIC_CLUTCH: derive horizontal velocity from the frame's position delta (the ship has no
+	# native velocity — it's lerp-driven). guard delta so a 0-dt frame can't divide-by-zero.
+	_velocity_x = (position.x - prev_x) / maxf(delta, 1.0e-5)
 	var span: float = maxf(1.0, _max_x - _min_x)
 	var x_norm: float = clampf((position.x - _min_x) / span, 0.0, 1.0)
 	_push_trail_point(position)
@@ -467,10 +496,44 @@ func _engine_params(engine_index: int, time: float) -> Dictionary:
 			}
 
 
-## Request a new steer target; always clamped to the steerable width.
+## Request a new steer target; clamped to the steerable width AND the active lane clamp (#86). The
+## lane clamp is normally the full width (a no-op); the Walled Gauntlet narrows it to trap the ship.
 func set_target_x(x: float) -> void:
-	_target_x = clampf(x, _min_x, _max_x)
+	var lo: float = maxf(_min_x, _lane_min)
+	var hi: float = minf(_max_x, _lane_max)
+	if lo > hi:                     # degenerate clamp (shouldn't happen) — fall back to the edge band
+		lo = _min_x
+		hi = _max_x
+	_target_x = clampf(x, lo, hi)
 
 
 func get_target_x() -> float:
 	return _target_x
+
+
+## #87 KINETIC_CLUTCH: the ship's current horizontal speed (px/s), derived in step(). Read by the
+## StanceController to drive stance: moving => SPRAY, near-stationary => LANCE.
+func velocity_x() -> float:
+	return _velocity_x
+
+
+## #87: register a tap at timestamp `t_ms`; returns true when this tap completes a TRIPLE_TAP_COUNT
+## burst within TRIPLE_TAP_WINDOW_MS (then resets so the next triple starts fresh). PURE (the stamp
+## is passed in, not read from the clock) so a headless test drives it deterministically.
+func register_tap(t_ms: int) -> bool:
+	_tap_times.append(t_ms)
+	# Drop taps older than the window so only a fast burst counts.
+	while not _tap_times.is_empty() and t_ms - _tap_times[0] > TRIPLE_TAP_WINDOW_MS:
+		_tap_times.pop_front()
+	if _tap_times.size() >= TRIPLE_TAP_COUNT:
+		_tap_times.clear()
+		return true
+	return false
+
+
+## #86: the Walled Gauntlet set the active lane clamp (or restored the full steerable width to
+## release). Re-clamp the live target immediately so the ship snaps into the committed lane.
+func _on_lane_clamp_changed(min_x: float, max_x: float) -> void:
+	_lane_min = min_x
+	_lane_max = max_x
+	set_target_x(_target_x)

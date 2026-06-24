@@ -32,6 +32,16 @@ var stance: int = Stance.SPRAY
 var score: int = 0
 var run_active: bool = false
 
+## GEOM_OVERDRIVE POC (#87): a kill-fed resource the player burns to enter a LANCE "smart-bomb"
+## overdrive. Run state — reset to 0 each run; kills add to it (add_geom on enemy_destroyed), the
+## overdrive burn drains it (drain_geom), and it auto-reverts the stance to SPRAY when it empties.
+## `overdrive_active` is the live LANCE-overdrive flag the Fleet/run.gd read for the visual spike.
+## Inert unless Settings.poc_mode == GEOM_OVERDRIVE (the StanceController gates the activation).
+const MAX_GEOM := 100.0
+const GEOM_PER_KILL := 12.0          # charge gained per enemy destroyed (~8 kills to a full gauge)
+var geom_charge: float = 0.0
+var overdrive_active: bool = false
+
 ## In-run token wallet (#78). Tokens drop from kills and are absorbed by the ship; this
 ## holds the current run's haul. Reset to 0 in start_run; banked to the persistent SpliceLab
 ## wallet on BOTH terminals (complete_run AND fail_run). An abandoned-to-title run FORFEITS it
@@ -96,6 +106,11 @@ func _ready() -> void:
 func wire_events() -> void:
 	if not Events.gate_passed.is_connected(_on_gate_passed):
 		Events.gate_passed.connect(_on_gate_passed)
+	# GEOM_OVERDRIVE POC (#87): every kill feeds the overdrive charge. Listening here (not in the
+	# StanceController) keeps the charge filling regardless of which POC is active, so switching modes
+	# never strands a half-built gauge; the StanceController only GATES the burn on poc_mode.
+	if not Events.enemy_destroyed.is_connected(_on_enemy_destroyed):
+		Events.enemy_destroyed.connect(_on_enemy_destroyed)
 
 
 ## React to a gate firing (#11/#56). The gate's emitted `new_count` is already its
@@ -107,11 +122,17 @@ func _on_gate_passed(gate_type: String, _value: float, new_count: int) -> void:
 	# Stance follows gate polarity (#79): a POSITIVE gate (+/×) opens up to a wide SPRAY,
 	# a NEGATIVE/focusing gate (−/÷) converges the stream into a heavy LANCE. set_stance is
 	# idempotent (no-op + no signal when unchanged), so repeated same-polarity gates are free.
+	# #86/#87: the gate→STANCE coupling only applies in the LEGACY POC. In the KINETIC_CLUTCH /
+	# GEOM_OVERDRIVE POCs an alternative driver (StanceController) OWNS the stance, so a gate must not
+	# fight it — but the projectile-count economy + the negative-gate battery drain stay unconditional
+	# (a divide gate still costs charge and thins the swarm; it just no longer forces LANCE).
+	var legacy: bool = int(Settings.poc_mode) == Settings.PocMode.LEGACY
 	if gate_type == "subtract" or gate_type == "divide":
-		set_stance(Stance.LANCE)
+		if legacy:
+			set_stance(Stance.LANCE)
 		# #80: the negative-gate drain is mode-scaled (EASY 0.7 gentler, HARD 1.35 harsher).
 		drain_battery(DRAIN_PER_NEGATIVE_GATE * Difficulty.drain_mult())
-	else:
+	elif legacy:
 		set_stance(Stance.SPRAY)
 
 
@@ -130,6 +151,42 @@ func is_spray() -> bool:
 	return stance == Stance.SPRAY
 
 
+## GEOM_OVERDRIVE (#87): add overdrive charge (kills feed it via _on_enemy_destroyed). Clamped to
+## MAX_GEOM, announces geom_changed. No-op once the run ends so a late kill-burst can't refill it.
+func add_geom(amount: float) -> void:
+	if not run_active:
+		return
+	var prev: float = geom_charge
+	geom_charge = clampf(geom_charge + absf(amount), 0.0, MAX_GEOM)
+	if geom_charge != prev:
+		Events.geom_changed.emit(geom_charge, MAX_GEOM)
+
+
+## GEOM_OVERDRIVE (#87): drain overdrive charge (the LANCE burn spends it each tick). Clamped at 0,
+## announces geom_changed. The StanceController watches for empty (geom_charge <= 0) to auto-revert.
+func drain_geom(amount: float) -> void:
+	var prev: float = geom_charge
+	geom_charge = clampf(geom_charge - absf(amount), 0.0, MAX_GEOM)
+	if geom_charge != prev:
+		Events.geom_changed.emit(geom_charge, MAX_GEOM)
+
+
+## GEOM_OVERDRIVE (#87): set the live LANCE-overdrive flag (the Fleet + run.gd read it for the visual
+## spike). Idempotent + announces overdrive_changed only on an actual flip. The StanceController owns
+## the transition logic (charge gate, triple-tap toggle, empty auto-revert); this is the state seam.
+func set_overdrive_active(active: bool) -> void:
+	if active == overdrive_active:
+		return
+	overdrive_active = active
+	Events.overdrive_changed.emit(overdrive_active)
+
+
+## Every kill feeds the GEOM_OVERDRIVE charge (#87), regardless of the active POC (so the gauge is
+## never stranded by a mode switch). Wired in wire_events; the burn is gated elsewhere on poc_mode.
+func _on_enemy_destroyed(_at: Vector2, _points: int) -> void:
+	add_geom(GEOM_PER_KILL)
+
+
 func start_run() -> void:
 	active_level = _load_level()
 	run_active = true
@@ -140,6 +197,8 @@ func start_run() -> void:
 	boss_active = false                      # #82/#83: no boss until run.gd arms it
 	glow_battery = MAX_GLOW_BATTERY
 	stance = START_STANCE                    # #79: every run starts in the wide SPRAY
+	geom_charge = 0.0                        # #87: fresh overdrive gauge each run
+	overdrive_active = false                 # #87: never start a run mid-overdrive
 	combo = 0
 	combo_multiplier = 1.0
 	_combo_timer = 0.0
@@ -154,6 +213,7 @@ func start_run() -> void:
 	Events.combo_updated.emit(combo)
 	Events.multiplier_changed.emit(combo_multiplier)
 	Events.tokens_changed.emit(run_tokens)   # #78: reset the in-run wallet display
+	Events.geom_changed.emit(geom_charge, MAX_GEOM)  # #87: reset the overdrive gauge display
 	Events.game_started.emit()
 
 
