@@ -4,67 +4,73 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-23"
-  session: 18
+  session: 19
   notes: >
-    Session 18 (DESIGN-ONLY — review of Patrick's TestFlight gameplay feedback; NO code, #23 untouched and
-    still the coding focus). Turned 5 tester points into a depth pass on the combat/economy, backed by a
-    5-agent Opus research dive (gate-runner genre, build-craft bullet-hells, roguelite economies, decision
-    theory, game-feel) → NEW docs/design/GATE_ECONOMY.md (full reasoning + sources). NEW ISSUES: #78 Splice
-    Lab economy (between-run RNG perk draft + enemy token drops), #79 gate-economy depth (Spray<->Lance
-    stance + threat triangle — THE keystone; priority:high; written theme-agnostic), #80 Easy/Med/Hard
-    difficulty, #81 ICEBOX/V2 twin-stick arena mode, #82 boss encounters (end-of-run climax, vary-only
-    control) — #78/#79/#80/#82 all v0.5.0. COMMENTS: #42 weapon-state readability ("show the spread"),
-    #78 in-run pickups = tokens only for v1, #59 absorbed the salvaged pacing concepts. CLEANUP: closed the
-    stale adaptive-difficulty epic #29-33 (GAME_SCOPE D4 demoted it) — per-phase intensity knobs + rest
-    zones folded into #59; #33 adaptive deaths/successes loop killed outright (player-facing difficulty is
-    now #80). LOCKED: Spray/Lance discrete+flippable; Rhombus immunity scales with difficulty (hard=immune);
-    meta horizontal not stat-creep; end-of-run boss first; bosses vary one-thumb control (no new schemes);
-    in-run pickups = tokens. PARKED: the "math" theme reskin (kept out of #79's mechanic so it doesn't
-    block), stance-flip cost, in-run consumables, debut boss (Singularity?). FOLLOW-UP: update GAME_SCOPE
-    §4.2-4.4 to the stance model + elevated boss role — deferred until the math-theme question resolves.
+    Session 19 (ULTRACODE — cleared the ENTIRE v0.4.0 Game Feel (Juice) epic + shipped build #14 to
+    TestFlight, internal + external/Patrick both distributed; user confirmed "all working as expected, but
+    need further polish"). Built 4 new components in parallel via a Workflow against a fixed contract, then
+    serial integration + validation. DONE: #23 FeedbackManager (assets/effects/feedback_manager.gd —
+    Camera2D trauma-shake FIXED_TOP_LEFT@origin=identity, world-only/HUD+grid immune + flash overlay; new
+    Events.trigger_screen_flash), #24 AudioManager (autoload/audio_manager.gd after Haptics — 8-voice SFX
+    pool, Music/SFX buses + low-pass, FULLY PROCEDURAL AudioStreamWAV synth, no assets; new
+    Settings.sfx_enabled/music_enabled), #25 SFX event->sound map, #26 combo readout pulse/break in run.gd
+    (kept the KILL-combo model, not the issue's positive-gate wording), #27 score popups
+    (assets/ui/score_popup_layer.gd, pooled floating "+N xM"), #28 milestones
+    (assets/effects/milestone_banner.gd — 100/500/1000 banner + slow-mo + fanfare + particles + heavy
+    haptic; new Events.milestone_reached), #65 haptics milestone tier. EPIC #22 CLOSED. Z-order fixed:
+    world(0)<flash(40)<HUD(50)<milestone(60)<pause(100). VALIDATION: project --import clean + 9/9 headless
+    verifies PASS (4 new + new verify_gamefeel.gd full run-scene smoke + run/style/particles/combat
+    regression). PARTIAL: #61 adaptive audio LEFT OPEN — shipped fake-adaptive intensity stem + battery
+    low-pass DSP hook, but beat/bass-envelope->grid-ripple pulse NOT done. Build #14 = first since #13, so
+    the #76 notch fix is now device-checkable. All shake/flash/audio/haptic FEEL is device-only (mini can't
+    render bloom/audio).
   previous_notes: >
-    Session 17 (DEVICE-FEEDBACK TRIAGE; #23 untouched, still next). Short session that CLOSED OUT the
-    v0.3.0 (Visual Polish) milestone — now 0 open — and fixed a real device bug on build #13. Closed the
-    three device-validation tails: #72 (in-run ship matches Garage — device-confirmed), #71 (grid restyle
-    improved on device), #66 (AMOLED mode functionally correct + persists but subtle — BG_STANDARD is
-    already near-black). NEW #76 — COMBO/battery readout was clipped by the iPhone 12/12 Pro notch; run.gd
-    _safe_top_inset() (DisplayServer.get_display_safe_area() → canvas units) shifts the HUD top row below
-    the top safe-area inset, 0 on notchless/headless; verify_scene PASS. NEW #77 — consolidated visual-
-    polish backlog. NO new build shipped — user batched the #76 notch fix with #23 rather than ship build
-    #14 for one cosmetic shift; confirm #76 on device whenever the next build goes out.
+    Session 18 (DESIGN-ONLY — review of Patrick's TestFlight gameplay feedback; NO code). Turned 5 tester
+    points into a v0.5.0 combat/economy depth pass, backed by a 5-agent Opus research dive → NEW
+    docs/design/GATE_ECONOMY.md. NEW ISSUES: #78 Splice Lab economy, #79 gate-economy depth (Spray<->Lance
+    stance + threat triangle — THE keystone; priority:high; theme-agnostic), #80 Easy/Med/Hard difficulty,
+    #81 ICEBOX/V2 twin-stick arena, #82 boss encounters — #78/#79/#80/#82 all v0.5.0. Closed the stale
+    adaptive-difficulty epic #29-33 (folded into #59). LOCKED: Spray/Lance discrete+flippable; Rhombus
+    immunity scales w/ difficulty; meta horizontal not stat-creep; end-of-run boss first; bosses vary
+    one-thumb control; in-run pickups = tokens. PARKED: "math" theme reskin (kept out of #79), stance-flip
+    cost, in-run consumables, debut boss. FOLLOW-UP: update GAME_SCOPE §4.2-4.4 to the stance model +
+    elevated boss role — deferred until the math-theme question resolves.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
 # =============================================================================
 focus:
   active_milestone: "v0.4.0 - Game Feel"
-  active_epic: "#22 — Phase 5: Game Feel (Juice)"
-  current_issue: "#23 — [Gameplay] Implement feedback manager (screen shake, flash). Wire the already-declared Events.trigger_screen_shake (+ a white-flash hook) into the Run scene as a FeedbackManager, consumed by HUD/camera. This is the v0.4.0 foundation the rest of Game Feel (combo/score-popups/milestones/audio) builds on."
-  next_issue: "#24 — [Audio] Create audio manager with sound pooling (then #25 SFX for all game events, #26 combo system, #27 score popups, #28 milestone celebrations; #65 Haptics + #61 adaptive audio also live in v0.4.0)."
+  active_epic: "#22 — Phase 5: Game Feel (Juice) [CLOSED — systems shipped in build #14]"
+  current_issue: "DEVICE POLISH PASS on the v0.4.0 Game Feel (build #14) — the user asked for 'further polish'. Tune on a real iPhone (mini can't render bloom/audio/haptics): screen-shake/flash intensities (#23), the procedural SFX + music mix (#24/#25), haptic tiers (#65), and FINISH #61 (beat-reactive grid pulse — the one Game-Feel item still OPEN). Plus the #77 consolidated visual-polish backlog + confirm the #76 notch fix (build #14 is the first build since #13)."
+  next_issue: "#79 — [Gameplay] Gate-economy depth (Spray<->Lance stance + threat triangle), the v0.5.0 priority:high KEYSTONE. Other v0.5.0 open: #78 Splice Lab token economy, #80 Easy/Med/Hard difficulty, #82 bosses. Also still open under v0.4.0: #53 Entropy enemy-faction epic, #61 (adaptive-audio remainder)."
   notes: >
-    Session 18 was DESIGN-ONLY (Patrick's TestFlight feedback → a v0.5.0 combat/economy depth pass; see NEW
-    docs/design/GATE_ECONOMY.md + issues #78-82). The v0.5.0 depth cluster now has design intent: #79
-    Spray<->Lance gate economy (keystone, priority:high), #78 Splice Lab token economy, #82 bosses, #80
-    difficulty; the stale adaptive-difficulty epic #29-33 was closed (folded into #59). NO code this session
-    — #23 is STILL UNTOUCHED and REMAINS the current coding focus. The "math" theme reskin is a PARKED open
-    question (kept out of #79's mechanic); GAME_SCOPE §4.2-4.4 needs a sync once it resolves.
-    START with #23 FeedbackManager: the Events bus already DECLARES trigger_screen_shake(intensity,duration)
-    but NOTHING emits or consumes it — build a FeedbackManager in the Run scene that listens (camera offset
-    shake + a white screen-flash) and have enemy_destroyed/enemy_breached/gate_passed/gate_hijack_blocked
-    emit it. Then #24 audio manager + #25 SFX (audio/ dir is empty; AudioManager autoload planned in
-    CLAUDE.md but not built), #26 combo visual feedback (GameState already tracks combo/combo_multiplier —
-    surface it), #27 score popups, #28 milestone celebrations, #65 haptics (Haptics autoload exists — wire
-    to feedback tiers), #61 adaptive audio.
-    PENDING DEVICE-CHECK (no build shipped session 17 — user batched the #76 notch fix with #23 rather than
-    ship build #14 for one cosmetic shift): confirm on the NEXT build that the COMBO/battery row clears the
-    notch (#76). Build-#13 tail already confirmed: ship matches Garage, black band gone, grid restyle.
-    DEPLOY is self-service: bump export_presets version → Godot iOS export (exit 1 expected) → fastlane ios
-    ship (self-unlocks keychain via NEON_KEYCHAIN_PW) → status until VALID → beta_submit for external. NOTE:
-    Apple ingestion can stall (build #12 was invisible >16 min — re-ship per the runbook if a build is
-    invisible >25 min). Device backlog: glow/fonts/haptics/FPS only provable on iPhone (#47); polish backlog
-    #77 (ship read, grid aesthetic, AMOLED contrast); #54/#34 the consolidated device-perf gate.
-    OPS: rotate the keychain password (history scrubbed via git filter-repo + force-push, but rotation is the
-    real fix); remove Xcode-16.4.0.app (rollback condition long met).
+    Session 19 cleared the WHOLE v0.4.0 Game Feel epic (#23-28, #65) in one ultracode pass and SHIPPED
+    build #14 to TestFlight — internal (you, scottdix@gmail.com) + external (Patrick, phresko@gmail.com)
+    both distributed; user confirmed it works. EPIC #22 is CLOSED. The juice systems all exist + are
+    headless-validated (9/9 verifies PASS incl. a new verify_gamefeel.gd full run-scene smoke; project
+    --import clean). NEW FILES: assets/effects/feedback_manager.gd (#23), autoload/audio_manager.gd (#24,
+    registered after Haptics + before SceneManager), assets/ui/score_popup_layer.gd (#27),
+    assets/effects/milestone_banner.gd (#28); new Events signals trigger_screen_flash + milestone_reached;
+    new Settings.sfx_enabled/music_enabled. Audio is FULLY PROCEDURAL (synth WAVs in AudioManager._ready) —
+    audio/ stays empty. Run z-order is now explicit: world(0)<flash(40)<HUD(50)<milestone(60)<pause(100).
+    THE WORK IS NOT YET PLAYTESTED ON DEVICE FOR FEEL — that is the current focus: the mini cannot render
+    bloom/audio/haptics, so shake/flash punch, the synth SFX/music mix, and haptic tiers are all device-only
+    tuning. #61 adaptive audio is PARTIAL (shipped fake-adaptive intensity stem + battery low-pass DSP hook;
+    beat/bass-envelope->grid-ripple pulse still TODO — left OPEN).
+    GOTCHA LEARNED THIS SESSION: a Node add_child()ed during a verify script's _initialize() has its _ready
+    DEFERRED under `-s` (same as autoloads) — pump `await process_frame` before asserting on the built tree
+    (see verify_gamefeel.gd). And a bare `Events` identifier won't compile in the `-s` MAIN tool script
+    (autoload globals not registered yet at its compile time) — use the root.get_node_or_null("Events") ref;
+    Palette.CONST works because it's const resolution.
+    DEPLOY is self-service + proven again this session: bump export_presets version -> Godot iOS export
+    (exit 1 EXPECTED) -> fastlane ios ship (self-unlocks keychain via NEON_KEYCHAIN_PW) -> status until VALID
+    (#14 took ~2 min) -> beta_submit build:N version:0.1.0 for external (distributed cleanly, NO spaceship
+    "Beta App Description missing" bug this time since 0.1.0 already cleared review). Re-ship if a build is
+    invisible >25 min (Apple ingestion stall).
+    DEVICE BACKLOG: confirm #76 notch fix on #14; glow/fonts/haptics/FPS only provable on iPhone (#47);
+    polish #77 (ship read, grid aesthetic, AMOLED contrast); #54/#34 consolidated device-perf gate.
+    OPS: rotate the keychain password; remove Xcode-16.4.0.app (rollback condition long met).
 
 # =============================================================================
 # TRACKER

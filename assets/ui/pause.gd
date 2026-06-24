@@ -11,7 +11,7 @@ const UI := preload("res://assets/ui/ui_kit.gd")
 
 
 func _ready() -> void:
-	layer = 10
+	layer = 100                                 # top of the run z-order (above flash/HUD/milestone)
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
 	_build()

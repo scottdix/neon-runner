@@ -81,7 +81,16 @@ signal combo_updated(combo_count: int)
 # --- Effects -----------------------------------------------------------------
 signal spawn_particles(position: Vector2, type: String)
 signal trigger_screen_shake(intensity: float, duration: float)
+## Full-screen colour flash (#23 FeedbackManager). A CanvasLayer ColorRect snaps to
+## `color` and fades to transparent over `duration` s. Consumed by FeedbackManager;
+## emitted on impactful beats (gate hijack denied / breach / collapse) alongside shake.
+signal trigger_screen_flash(color: Color, duration: float)
 signal trigger_grid_ripple(position: Vector2, is_implosion: bool)
+## A swarm-volume milestone was crossed (#28). The MilestoneBanner watches
+## projectile_count_changed and emits this once per threshold (100/500/1000) so audio
+## (fanfare), haptics (heavy), and effects can punctuate the celebration. `count` is the
+## milestone value crossed, not the live projectile_count.
+signal milestone_reached(count: int)
 
 # --- Settings / platform feel ------------------------------------------------
 ## AMOLED / low-power display mode toggled (#NEW, DESIGN_SPEC "Platform feel"). The

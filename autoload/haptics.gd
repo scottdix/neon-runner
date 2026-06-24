@@ -35,6 +35,8 @@ func wire() -> void:
 		Events.grid_collapsed.connect(_on_grid_collapsed)
 	if not Events.player_died.is_connected(_on_player_died):
 		Events.player_died.connect(_on_player_died)
+	if not Events.milestone_reached.is_connected(_on_milestone_reached):
+		Events.milestone_reached.connect(_on_milestone_reached)
 
 
 func light() -> void:
@@ -75,3 +77,7 @@ func _on_grid_collapsed() -> void:
 
 func _on_player_died() -> void:
 	heavy()
+
+
+func _on_milestone_reached(_count: int) -> void:
+	heavy()                                 # a swarm milestone — a celebratory thump (#28)

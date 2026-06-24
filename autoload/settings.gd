@@ -18,6 +18,10 @@ const PROGRESS := "progress"
 
 ## Master haptics switch (defaults ON — it's a paid-feel feature).
 var haptics_enabled: bool = true
+## Sound-effects master switch (defaults ON). AudioManager reads it before playing any SFX.
+var sfx_enabled: bool = true
+## Background-music master switch (defaults ON). AudioManager reads it before starting a track.
+var music_enabled: bool = true
 ## OLED pitch-black + low-power bloom mode (defaults OFF — opt-in).
 var amoled_mode: bool = false
 ## High score shown on Title (BEST) + flagged on Results (NEW BEST). Persisted here
@@ -44,6 +48,20 @@ func set_haptics_enabled(enabled: bool) -> void:
 	save_settings()
 
 
+func set_sfx_enabled(enabled: bool) -> void:
+	if enabled == sfx_enabled:
+		return
+	sfx_enabled = enabled
+	save_settings()
+
+
+func set_music_enabled(enabled: bool) -> void:
+	if enabled == music_enabled:
+		return
+	music_enabled = enabled
+	save_settings()
+
+
 ## Record a finished run's score; persists + returns true if it beat the previous best
 ## (Results shows the NEW BEST badge on a true). No-op-returns-false for a tie/lower.
 func record_score(s: int) -> bool:
@@ -60,6 +78,8 @@ func load_settings() -> void:
 	if cfg.load(CONFIG_PATH) != OK:
 		return
 	haptics_enabled = bool(cfg.get_value(SECTION, "haptics_enabled", haptics_enabled))
+	sfx_enabled = bool(cfg.get_value(SECTION, "sfx_enabled", sfx_enabled))
+	music_enabled = bool(cfg.get_value(SECTION, "music_enabled", music_enabled))
 	amoled_mode = bool(cfg.get_value(SECTION, "amoled_mode", amoled_mode))
 	best_score = int(cfg.get_value(PROGRESS, "best_score", best_score))
 
@@ -67,6 +87,8 @@ func load_settings() -> void:
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value(SECTION, "haptics_enabled", haptics_enabled)
+	cfg.set_value(SECTION, "sfx_enabled", sfx_enabled)
+	cfg.set_value(SECTION, "music_enabled", music_enabled)
 	cfg.set_value(SECTION, "amoled_mode", amoled_mode)
 	cfg.set_value(PROGRESS, "best_score", best_score)
 	cfg.save(CONFIG_PATH)
