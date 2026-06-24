@@ -34,6 +34,13 @@ func _ready() -> void:
 	_dynamic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_dynamic)
 	Events.splice_changed.connect(_rebuild)
+	# #78 draft shop: the shelf / wallet / drafted-perk state mutate through SpliceLab and announce
+	# on draft_changed (Events-bus decoupling — the screen never refs the lab). Re-render on it too.
+	Events.draft_changed.connect(_rebuild)
+	# Stock a fresh shelf on entry so the draft is always populated when the screen opens (a pick
+	# re-stocks; SKIP clears it). Only when empty so re-entering doesn't wipe a locked/rerolled shelf.
+	if SpliceLab.shelf.is_empty():
+		SpliceLab.stock()
 	_rebuild()
 
 
@@ -74,19 +81,22 @@ func _rebuild() -> void:
 
 	# INVENTORY drawer — one tappable card per SpliceLab.inventory mod.
 	var inv := UI.text("INVENTORY", Fonts.arcade, 24, Palette.TEXT_DIM_HUD)
-	inv.position = Vector2(90.0, 1200.0)
+	inv.position = Vector2(90.0, 1150.0)
 	_dynamic.add_child(inv)
 	for i in SpliceLab.inventory.size():
-		_dynamic.add_child(_inventory_card(i, Vector2(90.0 + i * 270.0, 1260.0)))
+		_dynamic.add_child(_inventory_card(i, Vector2(90.0 + i * 270.0, 1200.0)))
 
 	# SPLICE button — commits the fusion when both slots are filled.
-	var splice := UI.glow_button("SPLICE", gold, Vector2(UI.DESIGN.x - 120.0, 140.0), 50)
-	splice.position = Vector2(60.0, 1660.0)
+	var splice := UI.glow_button("SPLICE", gold, Vector2(540.0, 120.0), 46)
+	splice.position = Vector2(60.0, 1740.0)
 	splice.mouse_filter = Control.MOUSE_FILTER_STOP   # solid pick target inside the IGNORE passthrough layer
 	if not SpliceLab.can_splice():
 		splice.modulate = UI.fade(UI.TEXT_BRIGHT, 0.45)
 	_dynamic.add_child(splice)
 	UI.hit_overlay(splice).pressed.connect(_on_splice_pressed)
+
+	# #78 DRAFT SHOP — the between-run RNG perk shelf, rendered into the same dynamic layer.
+	_build_draft_section()
 
 
 ## SPLICE tap: fuse when ready (which emits splice_changed → _rebuild refreshes OUTPUT).
@@ -189,18 +199,18 @@ func _output_box(rect: Rect2) -> Control:
 func _inventory_card(i: int, pos: Vector2) -> Control:
 	var mod = SpliceLab.inventory[i]
 	var accent: Color = mod.accent_color()
-	var card := UI.panel(Vector2(250.0, 280.0), UI.fade(accent, 0.5), 0.05, 2.0, 12)
+	var card := UI.panel(Vector2(250.0, 150.0), UI.fade(accent, 0.5), 0.05, 2.0, 12)
 	card.position = pos
 	card.mouse_filter = Control.MOUSE_FILTER_STOP   # solid pick target inside the IGNORE passthrough layer
-	var icon := UI.orb(20.0, accent)
-	icon.position = Vector2(28.0, 28.0)
+	var icon := UI.orb(16.0, accent)
+	icon.position = Vector2(24.0, 22.0)
 	card.add_child(icon)
-	var cl := UI.text(mod.mod_name.replace(" ", "\n"), Fonts.arcade, 22, accent)
-	cl.position = Vector2(28.0, 160.0)
-	card.add_child(cl)
-	var op := UI.text("%s %s" % [mod.op, mod.stat], Fonts.mono, 22, UI.fade(accent, 0.95))
-	op.position = Vector2(28.0, 100.0)
+	var op := UI.text("%s %s" % [mod.op, mod.stat], Fonts.mono, 20, UI.fade(accent, 0.95))
+	op.position = Vector2(72.0, 26.0)
 	card.add_child(op)
+	var cl := UI.text(mod.mod_name.replace(" ", "\n"), Fonts.arcade, 20, accent)
+	cl.position = Vector2(24.0, 78.0)
+	card.add_child(cl)
 	UI.hit_overlay(card).pressed.connect(_on_card_pressed.bind(i))
 	return card
 
@@ -208,3 +218,149 @@ func _inventory_card(i: int, pos: Vector2) -> Control:
 ## Inventory card tap: equip into the next empty slot.
 func _on_card_pressed(i: int) -> void:
 	SpliceLab.equip_next(i)
+
+
+# --- #78 DRAFT SHOP ----------------------------------------------------------
+
+## Y origin of the draft band (header + offer row + reroll/skip controls).
+const DRAFT_TOP := 1390.0
+## One draft offer card's size — three sit in a row across the design width.
+const DRAFT_CARD := Vector2(300.0, 230.0)
+
+
+## Render the between-run RNG perk draft: a wallet readout, the DRAFT_SHELF_SIZE offer cards
+## (tap = PICK, the LOCK pip freezes a slot across rerolls — Brotato), and a REROLL (escalating
+## token cost) + SKIP control row. All state lives in SpliceLab; this redraws on draft_changed.
+func _build_draft_section() -> void:
+	var gold := Palette.MENU_GOLD_HUD
+	var dim := Palette.TEXT_DIM_HUD
+
+	# Section header + the persistent wallet (earned tokens available to spend on rerolls).
+	var hdr := UI.text("DRAFT", Fonts.arcade, 26, dim)
+	hdr.position = Vector2(90.0, DRAFT_TOP)
+	_dynamic.add_child(hdr)
+	var wallet := UI.text("◈ %s" % UI.commafy(int(SpliceLab.tokens)), Fonts.mono, 28, gold,
+		HORIZONTAL_ALIGNMENT_RIGHT)
+	wallet.size.x = 360.0
+	wallet.position = Vector2(UI.DESIGN.x - 450.0, DRAFT_TOP - 4.0)
+	_dynamic.add_child(wallet)
+
+	var row_y := DRAFT_TOP + 44.0
+	if SpliceLab.shelf.is_empty():
+		# SKIPped (or never stocked) — invite a re-stock so the shelf is never a dead end.
+		var none := UI.text("NO OFFERS — STOCK A SHELF", Fonts.mono, 26, UI.fade(dim, 0.9))
+		none.position = Vector2(90.0, row_y + 40.0)
+		_dynamic.add_child(none)
+		var stock := UI.outline_button("STOCK", Palette.ACCENT_CYAN_HUD, Vector2(260.0, 96.0), 30)
+		stock.position = Vector2(90.0, row_y + 110.0)
+		stock.mouse_filter = Control.MOUSE_FILTER_STOP
+		_dynamic.add_child(stock)
+		UI.hit_overlay(stock).pressed.connect(SpliceLab.stock)
+		return
+
+	# Centre the offer row: N cards with even gaps across the design width.
+	var n: int = SpliceLab.shelf.size()
+	var gap := 24.0
+	var total := n * DRAFT_CARD.x + (n - 1) * gap
+	var x0 := (UI.DESIGN.x - total) * 0.5
+	for i in n:
+		_dynamic.add_child(_draft_card(i, Vector2(x0 + i * (DRAFT_CARD.x + gap), row_y)))
+
+	# REROLL (escalating cost, disabled when unaffordable) + SKIP control row.
+	var ctl_y := row_y + DRAFT_CARD.y + 18.0
+	var cost: int = SpliceLab.reroll_cost()
+	var afford: bool = int(SpliceLab.tokens) >= cost
+	var reroll := UI.glow_button("REROLL  ◈%d" % cost, gold, Vector2(420.0, 100.0), 32)
+	reroll.position = Vector2(90.0, ctl_y)
+	reroll.mouse_filter = Control.MOUSE_FILTER_STOP
+	if not afford:
+		reroll.modulate = UI.fade(UI.TEXT_BRIGHT, 0.45)
+	_dynamic.add_child(reroll)
+	if afford:
+		UI.hit_overlay(reroll).pressed.connect(_on_reroll_pressed)
+
+	var skip := UI.outline_button("SKIP", dim, Vector2(300.0, 100.0), 30)
+	skip.position = Vector2(UI.DESIGN.x - 390.0, ctl_y)
+	skip.mouse_filter = Control.MOUSE_FILTER_STOP
+	_dynamic.add_child(skip)
+	UI.hit_overlay(skip).pressed.connect(_on_skip_pressed)
+
+
+## One draft offer slot: the perk's name/effect, accented in its colour, with a LOCK pip that
+## freezes the slot across rerolls. Tapping the card body PICKS the perk (free — the reward);
+## tapping the LOCK pip toggles the freeze (Brotato). A locked slot reads with a bright border.
+func _draft_card(i: int, pos: Vector2) -> Control:
+	var offer = SpliceLab.shelf[i]
+	if offer == null or offer.perk == null:
+		var empty := UI.panel(DRAFT_CARD, UI.fade(Palette.TEXT_DIM_HUD, 0.4), 0.03, 2.0, 12)
+		empty.position = pos
+		return empty
+	var perk = offer.perk
+	var accent: Color = perk.accent_color()
+	var is_locked: bool = i < SpliceLab.locked.size() and SpliceLab.locked[i]
+	var card := UI.panel(DRAFT_CARD, accent, 0.12 if is_locked else 0.06, 3.0 if is_locked else 2.0, 12)
+	card.position = pos
+	card.mouse_filter = Control.MOUSE_FILTER_STOP   # whole card is the PICK target
+
+	var orb := UI.orb(16.0, accent)
+	orb.position = Vector2(24.0, 22.0)
+	card.add_child(orb)
+	var nm := UI.text(perk.perk_name.replace(" ", "\n"), Fonts.arcade, 24, accent)
+	nm.position = Vector2(24.0, 64.0)
+	card.add_child(nm)
+	var fx := UI.text(_effect_label(perk), Fonts.mono, 22, UI.fade(accent, 0.95))
+	fx.position = Vector2(24.0, DRAFT_CARD.y - 56.0)
+	fx.size.x = DRAFT_CARD.x - 48.0
+	card.add_child(fx)
+	# PICK on the card body.
+	UI.hit_overlay(card).pressed.connect(_on_pick_pressed.bind(i))
+
+	# LOCK pip (top-right) — toggles the freeze. A small solid button OVER the card-body hit
+	# overlay so it intercepts its own taps before the PICK overlay sees them.
+	var lock := UI.panel(Vector2(64.0, 64.0),
+		gold_if_locked(is_locked, accent), 0.22 if is_locked else 0.06, 2.0, 10)
+	lock.position = Vector2(DRAFT_CARD.x - 80.0, 16.0)
+	lock.mouse_filter = Control.MOUSE_FILTER_STOP
+	var lk := UI.text("L" if is_locked else "l", Fonts.arcade, 28,
+		UI.TEXT_BRIGHT if is_locked else UI.fade(accent, 0.8), HORIZONTAL_ALIGNMENT_CENTER)
+	lk.set_anchors_preset(Control.PRESET_FULL_RECT)
+	lk.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lock.add_child(lk)
+	card.add_child(lock)
+	UI.hit_overlay(lock).pressed.connect(_on_lock_pressed.bind(i))
+	return card
+
+
+## The locked pip's accent: gold when frozen, the perk accent otherwise.
+func gold_if_locked(is_locked: bool, accent: Color) -> Color:
+	return Palette.MENU_GOLD_HUD if is_locked else accent
+
+
+## A compact human label for a perk's fold effect, e.g. "×1.5 MAGNET" / "+4 SHOTS".
+func _effect_label(perk) -> String:
+	var e: Dictionary = perk.effect
+	var op := String(e.get("op", "*"))
+	var sym := "×" if (op.begins_with("*") or op.begins_with("x") or op.begins_with("X")) else "+"
+	var mag := float(e.get("magnitude", 1.0))
+	var mag_str := ("%d" % int(mag)) if (sym == "+" or mag == floor(mag)) else ("%.2f" % mag)
+	return "%s%s %s" % [sym, mag_str, String(e.get("stat", ""))]
+
+
+## PICK the offer at `i`: carry its perk (free) and re-stock (SpliceLab emits draft_changed).
+func _on_pick_pressed(i: int) -> void:
+	SpliceLab.pick(i)
+
+
+## Toggle the LOCK on slot `i` (freezes it across rerolls).
+func _on_lock_pressed(i: int) -> void:
+	SpliceLab.lock(i)
+
+
+## REROLL the unlocked slots for the escalating token cost.
+func _on_reroll_pressed() -> void:
+	SpliceLab.reroll()
+
+
+## SKIP the draft (take nothing, clear the shelf).
+func _on_skip_pressed() -> void:
+	SpliceLab.skip()

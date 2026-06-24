@@ -157,6 +157,10 @@ func _initialize() -> void:
 	ev_auto.connect("run_completed", func(_s, d): seen[1] = true; seen[2] = d)
 
 	gs.call("start_run")
+	# This test exercises the BOSSLESS auto-complete branch (win at the finish line). The shipped
+	# level now ends in a boss (#82/#83) where run.gd owns the WIN, so force the loaded level to the
+	# bossless path here; the boss-arm-past-finish branch has its own assertion in verify_boss.
+	gs.get("active_level").set("has_boss", false)
 	var d0: float = gs.get("distance")
 	var len_m: float = gs.get("active_level").length_m
 	var dist_mid := 0.0

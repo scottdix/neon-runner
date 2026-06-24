@@ -4,8 +4,29 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-23"
-  session: 20
+  session: 21
   notes: >
+    Session 21 (ULTRACODE — cleared the ENTIRE codeable half of v0.5.0 in two sequential multi-agent
+    workflows (~21 agents) + shipped build #15 to TestFlight, internal + external/Patrick both distributed).
+    Epic #84 CLOSED. WF-1 (spine, serial-correctness): contract reconciliation then serial build of #79
+    Spray<->Lance stance + Fusillade tax (Spray weight 1.0 / Lance 6.0, pierce) + Rhombus per-hit armor FLOOR
+    (5.0, immunity-not-slow-kill) + Fractal-feed-on-spray, #54 collision hardening (verify-only), #80
+    Easy/Med/Hard (new Difficulty autoload + DifficultyProfile, mode-scales the #79 chip: Easy 0.45 grind ->
+    Hard 0.0 true immunity). WF-2 (additive on verified spine): scaffold-surface -> parallel author -> serial
+    integrate -> adversarial review. Built #82 boss framework (assets/bosses/boss.gd, TELEGRAPH/ARMORED-Lance/
+    ADD_SWARM-Spray/DEFEATED, fat collider via consume_volumes, LevelDef.has_boss gates auto-complete), #83
+    Singularity first boss (gravity field wired live via Fleet.apply_gravity_bias + run._apply_boss_gravity),
+    #78 Splice Lab economy (token drops/drift/absorb/magnetism + RNG perk draft folded into SpliceLab: offer-N/
+    pick-1/SKIP/escalating-reroll/Brotato-lock/seeded-RNG, earned-only wallet, shop UI on #68 screen), #59
+    phase director (distance-keyed Matrix/Quickening/Singularity/Overdrive, emit-only), #38 cull + #35 perf
+    overlay. ADVERSARIAL REVIEW caught + fixed 5 blocker/major bugs pre-ship (boss arming race; Singularity
+    gravity shipping as DEAD CODE; reroll no-op charging tokens + unreachable perks; misleading cull claims).
+    VALIDATION: independent --import clean + 25/25 headless verifies PASS (re-run in main loop, not just
+    trusting the workflow). SHIPPED: export 14->15, Godot iOS export (exit 1 expected), fastlane ios ship ->
+    #15 VALID ~180s, beta_submit build:15 -> external distributed. CLOSED #79/#80/#82/#83/#78/#59/#38/#35/#84.
+    KEPT OPEN (code done, device-blocked): #54/#39/#37/#36 + epic #34. NO device validation possible on the
+    mini (bloom/FPS/feel) — build #15 on a real iPhone is the surface.
+  previous_notes: >
     Session 20 (CLOSED OUT v0.4.0 — the milestone now has 0 open issues). Cleared the last two open
     items. #61 (music-reactive audio) CLOSED: built the unfinished beat-reactive grid pulse — grid pulses
     locked to the synthesized game bed's BASS ONSETS (deterministic, no FFT). New Events.music_beat(strength);
@@ -21,50 +42,34 @@ last_updated:
     regression green). Device-only: beat-pulse FEEL + all bloom/audio/haptics un-renderable on the mini; NO
     new TestFlight build this session (build #14 still current). Device polish pass + #76 notch fix remain
     device-backlog (gated on a real iPhone). Commit cadence: committed at handoff to main.
-  previous_notes: >
-    Session 19 (ULTRACODE — cleared the ENTIRE v0.4.0 Game Feel (Juice) epic + shipped build #14 to
-    TestFlight, internal + external/Patrick both distributed; user confirmed "all working as expected, but
-    need further polish"). Built 4 new components in parallel via a Workflow against a fixed contract, then
-    serial integration + validation. DONE: #23 FeedbackManager (assets/effects/feedback_manager.gd —
-    Camera2D trauma-shake FIXED_TOP_LEFT@origin=identity, world-only/HUD+grid immune + flash overlay; new
-    Events.trigger_screen_flash), #24 AudioManager (autoload/audio_manager.gd after Haptics — 8-voice SFX
-    pool, Music/SFX buses + low-pass, FULLY PROCEDURAL AudioStreamWAV synth, no assets; new
-    Settings.sfx_enabled/music_enabled), #25 SFX event->sound map, #26 combo readout pulse/break in run.gd
-    (kept the KILL-combo model, not the issue's positive-gate wording), #27 score popups
-    (assets/ui/score_popup_layer.gd, pooled floating "+N xM"), #28 milestones
-    (assets/effects/milestone_banner.gd — 100/500/1000 banner + slow-mo + fanfare + particles + heavy
-    haptic; new Events.milestone_reached), #65 haptics milestone tier. EPIC #22 CLOSED. Z-order fixed:
-    world(0)<flash(40)<HUD(50)<milestone(60)<pause(100). VALIDATION: project --import clean + 9/9 headless
-    verifies PASS (4 new + new verify_gamefeel.gd full run-scene smoke + run/style/particles/combat
-    regression). PARTIAL: #61 adaptive audio LEFT OPEN — shipped fake-adaptive intensity stem + battery
-    low-pass DSP hook, but beat/bass-envelope->grid-ripple pulse NOT done. Build #14 = first since #13, so
-    the #76 notch fix is now device-checkable. All shake/flash/audio/haptic FEEL is device-only (mini can't
-    render bloom/audio).
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
 # =============================================================================
 focus:
   active_milestone: "v0.5.0 - Complete Game"
-  active_epic: "#84 — Combat & Economy Depth (Entropy v2, gate stance, bosses) [successor to the CLOSED #53]"
-  current_issue: "#79 — [Gameplay] Gate-economy depth (Spray<->Lance stance + threat triangle), the v0.5.0 priority:high KEYSTONE under epic #84. Sequence FIRST — the discrete/flippable stance model is the spine #78/#80/#82/#83 hang off. Design locked in docs/design/GATE_ECONOMY.md (session 18): Spray vs Lance discrete + flippable; Rhombus immunity scales w/ difficulty; threat triangle. PARKED for later: 'math' theme reskin, stance-flip cost."
-  next_issue: "Rest of epic #84: #78 Splice Lab token economy, #80 Easy/Med/Hard difficulty, #82 boss encounters (framework + first boss), #83 Entropy 'Singularity' miniboss (carved from #53; likely folds into #82). #81 twin-stick arena stays ICEBOX/V2 (NOT in #84)."
+  active_epic: "#34 — Phase 7: Mobile Optimization (device-gated perf cluster: #54/#39/#37/#36). Epic #84 Combat & Economy Depth CLOSED session 21."
+  current_issue: "Device validation pass on build #15 (needs a real iPhone). ALL remaining v0.5.0 work is device-gated under epic #34 — nothing further is codeable on the mini (Intel UHD 630 + MoltenVK can't render glow/bloom or read true FPS). #39 profile+fix is the keystone (#35 perf overlay is the in-game seam); then #54 (60fps with dense fleet+swarm), #37 (particle opt), #36 (texture-atlas draw-call reduction). Also confirm on-device FEEL of the session-21 combat/economy: stance flips, Rhombus-floor vs Lance balance, boss arm/gravity, perk draft, phase crescendo — plus the carried beat-pulse (#61) + #76 notch fix on a real build."
+  next_issue: "After the device pass: close out #54/#39/#37/#36 with on-device numbers; device-feel TUNING (Rhombus floor vs Lance weight 6.0, perk power curve, boss arm offset ship_pos.y-600, difficulty knobs — all sane defaults, none device-confirmed); #77 visual polish backlog. Then v0.5.0 milestone closes. #81 twin-stick arena stays ICEBOX/V2."
   notes: >
-    Session 20 CLOSED OUT v0.4.0 — milestone now has 0 open issues. Both remaining items shipped/closed.
-    #61 (music-reactive audio) CLOSED: built the beat-reactive grid pulse. NEW Events.music_beat(strength);
-    AudioManager beat clock locked to the synthesized game bed's bass onsets (GAME_BED_DUR/GAME_BED_NOTES,
-    one beat/bass-note, downbeat emphasized; pure _beat_period/_beat_strength/_advance_beat_phase; emits in
-    _process; gated to the "game" bed, off for menu/stop/collapse); GridFloor.pulse_beat() global
-    brightness/warp breath w/ decay (BEAT_PULSE_DECAY, max-held) + _flush_beat + Events.music_beat wiring;
-    NEW `beat_pulse` shader uniform brightens the grid + swells warp on the bass. Deterministic + bass-aligned
-    by construction (no FFT). #53 (Entropy faction epic) CLOSED: was ALREADY fully built + live in build #14
-    (targets.gd — all archetypes + gate-hijack + multiply-through + batched damage/breach), so verified-not-
-    rebuilt; the deferred Singularity miniboss carved to NEW #83. Created NEW v0.5.0 epic #84 (Combat &
-    Economy Depth) as #53's successor, parenting #78/#79/#80/#82 + #83 (Singularity milestoned v0.5.0).
-    VALIDATION: --import clean + 11/11 headless verifies PASS (extended verify_audio beat clock, verify_grid
-    pulse decay + new shader uniform, verify_gamefeel live music_beat->GridFloor integration; full regression
-    green). NO new TestFlight build this session — build #14 still current; ship only when you want the grid
-    pulse + device polish on-device.
+    Session 21 (ULTRACODE) cleared the ENTIRE codeable half of v0.5.0 + shipped build #15 (internal +
+    external/Patrick distributed). Epic #84 CLOSED. Two sequential multi-agent workflows: WF-1 spine
+    (serial-correctness: contract reconcile -> #79 Spray<->Lance stance+Fusillade tax+Rhombus per-hit FLOOR
+    -> #54 collision-harden -> #80 Difficulty autoload/profile), WF-2 additive (scaffold-surface -> parallel
+    author -> serial integrate -> adversarial review) for #82 boss framework, #83 Singularity (gravity wired
+    live), #78 economy (token drops + RNG perk draft folded into SpliceLab), #59 phase director, #38 cull,
+    #35 perf overlay. Adversarial review caught+fixed 5 blocker/major bugs (boss arming race; Singularity
+    gravity DEAD-CODE; reroll no-op + unreachable perks; misleading cull). Independent --import clean + 25/25
+    headless verifies PASS (re-run in main loop). CLOSED #79/#80/#82/#83/#78/#59/#38/#35/#84; KEPT OPEN
+    (code done, device-blocked) #54/#39/#37/#36 + epic #34.
+    KEY NEW SURFACE for next session: Difficulty autoload (resources/difficulty_profile.gd); stance lives in
+    GameState (Stance enum, set_stance, is_spray) + Events.stance_changed; Fleet.hit_weight()/is_piercing()/
+    apply_gravity_bias(); Targets RHOMBUS_PER_HIT_FLOOR=5.0 + armor_floor_mult + Difficulty.armor_chip_fraction();
+    bosses in assets/bosses/ (Boss base + Singularity), armed in run.gd at BOSS_ARM_PROGRESS, gated by
+    LevelDef.has_boss; SpliceLab folds the draft (shelf/stock/pick/skip/reroll/lock + seeded _draft_rng) +
+    tokens wallet + perks; phase_director.gd + PhaseDef (distance-keyed, emit-only v1); perf files
+    perf_overlay/viewport_cull/particle_budget/sprite_atlas. 11 new Events signals. New verifies: verify_stance/
+    difficulty/boss/economy/director/perf (25 total).
     GOTCHAS still in force: a Node add_child()ed during a verify _initialize() has _ready DEFERRED under `-s`
     (pump await process_frame before asserting — see verify_gamefeel); a bare `Events` won't compile in the
     `-s` MAIN tool script (use root.get_node_or_null("Events")); GDScript const-arithmetic on a loaded
@@ -74,9 +79,10 @@ focus:
     DEPLOY unchanged + proven: bump export_presets version -> Godot iOS export (exit 1 EXPECTED) -> fastlane
     ios ship (self-unlocks keychain via NEON_KEYCHAIN_PW) -> status until VALID -> beta_submit build:N
     version:0.1.0 for external. Re-ship if a build is invisible >25 min (Apple ingestion stall).
-    DEVICE BACKLOG (gated on a real iPhone, NOT blocking v0.5.0 design): tune beat-pulse/shake/flash/audio/
-    haptic FEEL; confirm #76 notch fix on #14; glow/fonts/FPS only provable on iPhone (#47); polish #77
-    (ship read, grid aesthetic, AMOLED contrast); #54/#34 consolidated device-perf gate.
+    DEVICE BACKLOG (gated on a real iPhone — now the ONLY remaining v0.5.0 work): on build #15, tune the
+    session-21 combat/economy FEEL (stance flips, Rhombus-floor vs Lance, boss arm/gravity, perk draft, phase
+    crescendo) + beat-pulse/shake/flash/audio/haptic; confirm #76 notch fix; glow/fonts/real-FPS only provable
+    on iPhone; the open #34 perf cluster (#54/#39/#37/#36) closes with on-device numbers; polish #77.
     OPS: rotate the keychain password; remove Xcode-16.4.0.app (rollback condition long met).
 
 # =============================================================================

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="PerkDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/perk_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+perk_name = "SPEED RAIL"
+description = "Faster projectile velocity."
+accent = "gold"
+effect = {
+"magnitude": 1.25,
+"op": "*",
+"stat": "SPEED"
+}

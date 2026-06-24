@@ -21,6 +21,13 @@ signal player_steered(x: float, x_normalized: float)
 ## Always-on fire (D1, GAME_SCOPE): the swarm volume. Re-emitted by GameState
 ## whenever projectile_count changes (gates spike/decimate it).
 signal projectile_count_changed(count: int)
+## Stream STANCE changed (#79). The fire mode flips between SPRAY (wide, light, many
+## bullets) and LANCE (narrow, heavy, piercing, fewer bullets) as the player crosses
+## gates: positive (+/×) gates set SPRAY, focusing (−/÷) gates set LANCE. Emitted ONLY
+## by GameState.set_stance on an ACTUAL change (single owner of run-state). `is_spray`
+## is the convenience bool (== stance == GameState.Stance.SPRAY) so Fleet/HUD/grid bind
+## the int without importing the enum.
+signal stance_changed(stance: int, is_spray: bool)
 ## Emitted each volley the fleet fires — hook for audio/muzzle vfx.
 signal fleet_fired(shots: int)
 
@@ -103,6 +110,10 @@ signal milestone_reached(count: int)
 ## Run environment swaps to a pitch-black clear + a dimmer bloom/grid path when on.
 ## Re-emitted by Settings whenever the flag changes so live toggling works.
 signal amoled_mode_changed(enabled: bool)
+## Difficulty mode changed (#80). 0=EASY 1=MEDIUM 2=HARD. Emitted ONLY by Settings.set_difficulty
+## on an actual change; the Difficulty autoload re-reads its active profile on this, and any open
+## settings UI refreshes its selector. Single owner = Settings (persists the int).
+signal difficulty_changed(mode: int)
 
 # --- Loadout / Splice (meta-progression: #67 garage, #68 splice lab) ----------
 ## The player's ship loadout changed (hull / trail / engine). Garage commits via the
@@ -111,3 +122,47 @@ signal loadout_changed
 ## The equipped splice changed (#68) — the active spliced-weapon output was updated. The
 ## Splice Lab commits via the SpliceLab autoload; consumers read SpliceLab for the output.
 signal splice_changed
+
+# --- Boss (#82/#83) ----------------------------------------------------------
+## A boss armed at the end of the track. `max_hp` seeds the boss HP bar. Emitted ONCE
+## by the boss on spawn; run.gd flips GameState.boss_active so tick_run stops auto-completing.
+signal boss_spawned(boss_name: String, max_hp: float)
+## A boss crossed into a new phase. Emitted ONCE per transition (TELEGRAPH / ARMORED /
+## ADD_SWARM / DEFEATED); HUD/audio/vfx punctuate. `phase` is the int, `phase_name` the label.
+signal boss_phase_changed(phase: int, phase_name: String)
+## The boss reached HP<=0. Emitted ONCE; run.gd consumes this and calls
+## GameState.complete_run() (the boss is the run's WIN terminal — GameState never auto-completes
+## while boss_active). `at` is the death position for the kill vfx.
+signal boss_defeated(boss_name: String, at: Vector2)
+
+# --- Economy / tokens (#78) --------------------------------------------------
+## A token dropped from a destroyed enemy (Targets._kill). `value` is the bounty; the
+## TokenLayer spawns a drifting pickup at `at`.
+signal token_dropped(at: Vector2, value: int)
+## A drifting token was absorbed by the ship (TokenLayer, on touch within the magnet radius).
+## `wallet_total` is the IN-RUN running total AFTER this pickup (== GameState.run_tokens, the same
+## value tokens_changed carries) — NOT the persistent SpliceLab.tokens wallet (that's only updated
+## when the run BANKS on a terminal). A chime/HUD reading this gets the live run subtotal. Hook for a
+## pickup chime/vfx.
+signal token_collected(at: Vector2, value: int, wallet_total: int)
+## The in-run token count changed (GameState.collect_token). `in_run` is the live run total;
+## HUD binds it. Banked to the persistent SpliceLab wallet on a terminal.
+signal tokens_changed(in_run: int)
+## The meta draft mutated (SpliceLab shelf / wallet / perks). The Splice Lab screen re-renders
+## off this (Events-bus decoupling) — it never holds a direct ref to the lab.
+signal draft_changed
+
+# --- Phase director (#59) ----------------------------------------------------
+## The run crossed a phase boundary (PhaseDirector, DISTANCE-keyed off GameState.distance).
+## `config` carries {grid_mode, spawn_density_mult, gate_speed_mult, gate_moving, gravity}.
+## v1 consumers: grid_floor may read grid_mode; spawn/gate consumption is deferred.
+signal phase_changed(phase_index: int, phase_name: String, config: Dictionary)
+## A gravity field is active (PhaseDirector when the live phase's gravity != 0; the Singularity
+## boss REUSES this — there is no boss-specific gravity signal). `direction` is a NORMALIZED unit
+## pull vector; `strength` is a NORMALIZED 0..1 magnitude (BOTH emitters honour this one unit so a
+## single consumer shares one scale — the director emits grav.normalized()/grav.length() of its unit
+## SINGULARITY vector, the boss emits the unit core-direction + its 0..1 collapse pulse). The actual
+## px/s² pull acceleration is INTERNAL to the boss's pure helpers (gravity_on_projectile/pull_on_ship),
+## which run.gd consumes directly for the live bullet/ship bias — this signal is the cosmetic
+## broadcast (grid warp / ship feel), not the force scale.
+signal gravity_shift(direction: Vector2, strength: float)

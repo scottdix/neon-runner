@@ -34,6 +34,10 @@ Palette="*res://autoload/palette.gd"
 Fonts="*res://autoload/fonts.gd"
 ; Persisted player options (haptics + AMOLED). Depends on Events (emits on change).
 Settings="*res://autoload/settings.gd"
+; Per-mode difficulty tuning (#80): maps Settings.difficulty -> a DifficultyProfile of
+; multipliers (armor chip / drain / spawn density). Depends on Events + Settings (reads the int);
+; registered BEFORE GameState, which reads drain_mult() through it.
+Difficulty="*res://autoload/difficulty.gd"
 ; Ship loadout (#67 Garage): hull/trail/engine selection, persisted. Depends on Events.
 Loadout="*res://autoload/loadout.gd"
 ; Splice Lab (#68): power-up modifier inventory + fusion, persisted. Depends on Events.

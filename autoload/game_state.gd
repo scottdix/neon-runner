@@ -20,8 +20,28 @@ const DEFAULT_LEVEL_PATH := "res://data/level_01.tres"
 ## this; the fleet and HUD react via Events, not direct calls.
 var projectile_count: int = 0
 
+## Stream STANCE (#79). SPRAY = the default wide light wall of fire; LANCE = a narrow
+## heavy piercing beam. Gate polarity flips it: positive (+/×) gates -> SPRAY, focusing
+## (−/÷) gates -> LANCE. SPRAY=0 so a bare Fleet's `_stance` default (0) IS SPRAY, and
+## SPRAY is the run default so verify_combat's wide-stream invariants hold. GameState is
+## the SINGLE owner of stance — it's set here (from gate_passed) and announced via Events.
+enum Stance { SPRAY, LANCE }
+const START_STANCE := Stance.SPRAY
+var stance: int = Stance.SPRAY
+
 var score: int = 0
 var run_active: bool = false
+
+## In-run token wallet (#78). Tokens drop from kills and are absorbed by the ship; this
+## holds the current run's haul. Reset to 0 in start_run; banked to the persistent SpliceLab
+## wallet on BOTH terminals (complete_run AND fail_run). An abandoned-to-title run FORFEITS it
+## (no bank call). Mutated only via collect_token, which announces tokens_changed.
+var run_tokens: int = 0
+
+## A boss is armed (#82/#83). While true, tick_run MUST NOT auto-complete on distance>=length —
+## run.gd owns the boss and calls complete_run() on Events.boss_defeated. This guard is
+## GameState's ONLY boss-related edit; the boss lives entirely in run.gd's scene tree.
+var boss_active: bool = false
 
 ## Finite-level state (#51). `active_level` is the LevelDef for this run;
 ## `distance` is metres travelled; `run_won` records the win terminal.
@@ -84,8 +104,30 @@ func wire_events() -> void:
 ## the Split Choice. The spawner used to do this inline; now it only calls trigger().
 func _on_gate_passed(gate_type: String, _value: float, new_count: int) -> void:
 	set_projectile_count(new_count)
+	# Stance follows gate polarity (#79): a POSITIVE gate (+/×) opens up to a wide SPRAY,
+	# a NEGATIVE/focusing gate (−/÷) converges the stream into a heavy LANCE. set_stance is
+	# idempotent (no-op + no signal when unchanged), so repeated same-polarity gates are free.
 	if gate_type == "subtract" or gate_type == "divide":
-		drain_battery(DRAIN_PER_NEGATIVE_GATE)
+		set_stance(Stance.LANCE)
+		# #80: the negative-gate drain is mode-scaled (EASY 0.7 gentler, HARD 1.35 harsher).
+		drain_battery(DRAIN_PER_NEGATIVE_GATE * Difficulty.drain_mult())
+	else:
+		set_stance(Stance.SPRAY)
+
+
+## Set the stream stance (#79) — the SINGLE place stance mutates. Idempotent: a no-op
+## (no signal) when unchanged, else commit and announce via Events.stance_changed with the
+## convenience `is_spray` bool so consumers (Fleet/HUD/grid) bind the int without the enum.
+## Public so the verify + future hijack-cleared paths can drive it directly.
+func set_stance(s: int) -> void:
+	if s == stance:
+		return
+	stance = s
+	Events.stance_changed.emit(stance, stance == Stance.SPRAY)
+
+
+func is_spray() -> bool:
+	return stance == Stance.SPRAY
 
 
 func start_run() -> void:
@@ -94,7 +136,10 @@ func start_run() -> void:
 	run_won = false
 	score = 0
 	distance = 0.0
+	run_tokens = 0                           # #78: fresh wallet each run (banked on a terminal)
+	boss_active = false                      # #82/#83: no boss until run.gd arms it
 	glow_battery = MAX_GLOW_BATTERY
+	stance = START_STANCE                    # #79: every run starts in the wide SPRAY
 	combo = 0
 	combo_multiplier = 1.0
 	_combo_timer = 0.0
@@ -108,6 +153,7 @@ func start_run() -> void:
 	Events.glow_battery_changed.emit(glow_battery, MAX_GLOW_BATTERY)
 	Events.combo_updated.emit(combo)
 	Events.multiplier_changed.emit(combo_multiplier)
+	Events.tokens_changed.emit(run_tokens)   # #78: reset the in-run wallet display
 	Events.game_started.emit()
 
 
@@ -128,6 +174,7 @@ func fail_run() -> void:
 		return
 	run_active = false
 	run_won = false
+	_bank_tokens()                                # #78: a lost run still banks its haul
 	is_new_best = Settings.record_score(score)
 	Events.grid_collapsed.emit()
 
@@ -142,7 +189,15 @@ func tick_run(delta: float) -> void:
 	distance += active_level.scroll_speed_mps * delta
 	var progress: float = clampf(distance / active_level.length_m, 0.0, 1.0)
 	Events.distance_changed.emit(distance, progress)
-	if distance >= active_level.length_m:
+	# #82/#83: at the end of the track a boss arms (run.gd). A BOSS level NEVER auto-completes on
+	# distance — run.gd arms the boss as the track ends and owns the WIN, calling complete_run() on
+	# boss_defeated. This is the fix for the arming race: tick_run integrating past length_m used to
+	# call complete_run() on the very crossing frame (boss_active was still false there because run.gd
+	# hadn't run yet that frame), killing the run before the boss could arm. Gating on the level's
+	# authored `has_boss` (not the transient boss_active flag) means the crossing frame can't end the
+	# run. `boss_active` stays an extra guard so even a bossless-level race can't double-complete.
+	var level_has_boss: bool = bool(active_level.get("has_boss")) if active_level.get("has_boss") != null else false
+	if distance >= active_level.length_m and not level_has_boss and not boss_active:
 		complete_run()
 
 
@@ -154,6 +209,7 @@ func complete_run() -> void:
 	run_active = false
 	run_won = true
 	distance = active_level.length_m if active_level != null else distance
+	_bank_tokens()                                # #78: a won run banks its haul
 	is_new_best = Settings.record_score(score)
 	Events.run_completed.emit(score, distance)
 
@@ -177,6 +233,30 @@ func _load_level() -> Resource:
 func add_score(amount: int) -> void:
 	score += amount
 	Events.score_changed.emit(score)
+
+
+## Collect a token into the in-run wallet (#78). Pure economy: NO score / register_kill /
+## combo interaction (tokens are a separate meta currency from score). The TokenLayer calls
+## this on a ship-touch pickup; we add the value and announce the new running total. Banked to
+## the persistent SpliceLab wallet on a terminal; forfeited on an abandoned-to-title run.
+func collect_token(value: int) -> void:
+	run_tokens += value
+	Events.tokens_changed.emit(run_tokens)
+
+
+## Bank this run's token haul into the persistent SpliceLab wallet (#78). Called on BOTH
+## terminals (complete_run AND fail_run) — only an abandoned-to-title run forfeits. Null-safe
+## via get_node_or_null so the headless `-s` verify loop (where the SpliceLab autoload may be
+## absent for an isolated GameState test) doesn't crash. Run-state owner stays GameState; the
+## wallet's mutation/persistence is SpliceLab's job (deposit_tokens persists + emits draft_changed).
+func _bank_tokens() -> void:
+	if run_tokens <= 0:
+		return
+	var loop := Engine.get_main_loop()
+	if loop is SceneTree:
+		var lab: Node = (loop as SceneTree).root.get_node_or_null("SpliceLab")
+		if lab != null and lab.has_method("deposit_tokens"):
+			lab.call("deposit_tokens", run_tokens)
 
 
 ## Score a kill through the combo system — Targets calls this instead of add_score so

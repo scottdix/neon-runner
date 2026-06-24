@@ -72,45 +72,46 @@ func _initialize() -> void:
 	else:
 		lines.append("archetype OK: glitch<rhombus, rhombus armored, fractal splits")
 
-	# 3) Rhombus armor — _apply_damage takes hits ABOVE armor at full damage; a single
-	#    sub-armor frame does only a NEGLIGIBLE chip (no one-shot, but no lockout either,
-	#    #74). A glitch (armor 0) takes the full hit.
+	# 3) Rhombus armor — UPDATED to the #79 per-hit WEIGHT FLOOR model (armor is now a quality
+	#    gate, not a count gate). A SPRAY-weight (1.0, sub-floor) hit only CHIPS regardless of
+	#    count; a LANCE-weight (6.0, ≥floor) hit CRACKS it for full weighted damage. A glitch
+	#    (armor 0) takes full weighted damage either way. The old "hits above an int armor count"
+	#    crack model is superseded by RHOMBUS_PER_HIT_FLOOR (#79).
 	var rh: Dictionary = tg.call("_new_enemy", TargetsS.KIND_RHOMBUS, 0.0)
 	var rh_hp0: float = rh["hp"]
-	tg.call("_apply_damage", rh, int(rh["armor"]))          # hits == armor -> chip only
+	tg.call("_apply_damage", rh, 3, FleetS.SPRAY_HIT_WEIGHT)  # 3 spray bullets (1.0<floor) -> chip
 	var rh_after_armor: float = rh["hp"]
-	var rh_chip: float = rh_hp0 - rh_after_armor            # one sub-armor frame's chip
-	tg.call("_apply_damage", rh, int(rh["armor"]) + 7)      # 7 effective -> -70 (plus prior chip)
+	var rh_chip: float = rh_hp0 - rh_after_armor             # one sub-floor frame's chip
+	tg.call("_apply_damage", rh, 1, FleetS.LANCE_HIT_WEIGHT)  # 1 lance bullet (6.0≥floor) -> -60
 	var rh_after_crack: float = rh["hp"]
 	var gl2: Dictionary = tg.call("_new_enemy", TargetsS.KIND_GLITCH, 0.0)
 	var gl_hp0: float = gl2["hp"]
-	tg.call("_apply_damage", gl2, 3)                        # armor 0 -> -30
-	lines.append("armor: rhombus %.1f ->(thin)%.1f chip=%.1f ->(crack)%.1f | glitch %.0f ->(3hits)%.0f" % [
+	tg.call("_apply_damage", gl2, 3)                        # armor 0, default weight 1.0 -> -30
+	lines.append("armor: rhombus %.1f ->(spray)%.1f chip=%.1f ->(lance)%.1f | glitch %.0f ->(3hits)%.0f" % [
 		rh_hp0, rh_after_armor, rh_chip, rh_after_crack, gl_hp0, gl2["hp"]])
-	# A single sub-armor frame must be negligible: it can't be ZERO (that was the lockout
-	# bug) but must stay a tiny fraction of the rhombus's HP (no thin-stream one-shot).
+	# A sub-floor (spray) frame must be negligible: it can't be ZERO (that was the lockout
+	# bug, #74) but must stay a tiny fraction of the rhombus's HP (no thin-stream crack).
 	if rh_chip <= 0.0:
-		lines.append("armor FAIL: sub-armor frame did NO damage (the unkillable-rhombus lockout, #74)"); ok = false
+		lines.append("armor FAIL: sub-floor frame did NO damage (the unkillable-rhombus lockout, #74)"); ok = false
 	if rh_chip > rh_hp0 * 0.02:
-		lines.append("armor FAIL: a single sub-armor frame chipped too much (%.1f of %.0f)" % [rh_chip, rh_hp0]); ok = false
-	# The full-damage path above armor must still chip the excess at DAMAGE_PER_BULLET.
-	if absf(rh_after_crack - (rh_after_armor - 70.0)) > 0.01:
-		lines.append("armor FAIL: excess hits did not chip past armor at full damage"); ok = false
+		lines.append("armor FAIL: a single sub-floor frame chipped too much (%.1f of %.0f)" % [rh_chip, rh_hp0]); ok = false
+	# A LANCE bullet clears the floor and cracks it for full weighted damage = 1*6*10 = 60.
+	if absf(rh_after_crack - (rh_after_armor - 60.0)) > 0.01:
+		lines.append("armor FAIL: a lance (above-floor) bullet did not crack at full weighted damage"); ok = false
 	if absf(gl2["hp"] - (gl_hp0 - 30.0)) > 0.01:
 		lines.append("armor FAIL: glitch (armor 0) did not take full damage"); ok = false
 	if ok:
-		lines.append("armor OK: rhombus chips negligibly on ≤armor hits, cracks above; glitch unarmored")
+		lines.append("armor OK: rhombus chips on sub-floor (spray) hits, cracks on lance; glitch unarmored")
 
-	# 3b) No permanent lockout (#74): a SUSTAINED thin stream at/below armor, applied over
-	#     many frames, must eventually bring a Rhombus to <=0 hp — the regression guard for
-	#     "large magenta enemies are unkillable". (One frame is negligible (3 above); the
-	#     sum over a steady stream must still win.)
+	# 3b) No permanent lockout (#74): a SUSTAINED sub-floor (spray) stream, applied over many
+	#     frames, must eventually bring a Rhombus to <=0 hp — the regression guard for "large
+	#     magenta enemies are unkillable". (One frame is negligible (3 above); the sum over a
+	#     steady stream must still win, so SPRAY teaches-not-enforces the focus-into-LANCE.)
 	var rh_sus: Dictionary = tg.call("_new_enemy", TargetsS.KIND_RHOMBUS, 0.0)
-	var sus_armor: int = int(rh_sus["armor"])
 	var sus_frames := 0
 	var sus_cap := 6000                                     # generous bound (~100s @60fps)
 	while float(rh_sus["hp"]) > 0.0 and sus_frames < sus_cap:
-		tg.call("_apply_damage", rh_sus, sus_armor)        # hits == armor every frame
+		tg.call("_apply_damage", rh_sus, 1, FleetS.SPRAY_HIT_WEIGHT)  # sub-floor spray every frame
 		sus_frames += 1
 	lines.append("sustained sub-armor: rhombus dead after %d frames (cap %d)" % [sus_frames, sus_cap])
 	if float(rh_sus["hp"]) > 0.0:
@@ -266,6 +267,163 @@ func _initialize() -> void:
 		lines.append("scale OK: batched collision holds; bullets + enemies stay bounded at scale")
 	fl_s.free()
 	tg_s.free()
+
+	# 8) #54 — collision/damage HARDENING against the #79 per-hit WEIGHT model. The batched
+	#    layer (consume_volumes + _apply_damage) must honor stance weight end-to-end: a real
+	#    Fleet in SPRAY (light, count-only) can't crack a Rhombus, the SAME Fleet flipped to
+	#    LANCE (heavy per-hit) does, SPRAY still feeds a Fractal split, and a FAT boss-sized
+	#    collider is resolved by the volume math with NO per-bullet bodies. These drive the
+	#    REAL Fleet (not a hand-passed weight) so the wiring in step() is exercised.
+	#    OUT OF SCOPE (device-only): real-FPS-on-phone acceptance — Intel UHD 630/MoltenVK
+	#    can't read true FPS here (CLAUDE.md); this asserts LOGIC/conservation, not framerate.
+	lines.append("--- #54 stance-weight collision hardening ---")
+
+	# 8a) A SPRAY stream (real Fleet, default _stance) FAILS to crack a Rhombus: many light
+	#     bullets land (sub-floor weight 1.0) but only chip — the armored enemy SURVIVES a
+	#     burst that would obliterate an unarmored one. Drives the full step() damage path so
+	#     the hit_weight() / is_piercing() fetch + _apply_damage wiring is exercised, not faked.
+	gs.call("start_run")
+	gs.call("set_projectile_count", 200)                    # dense, but SPRAY = light per-hit
+	var fl_sp: Node2D = FleetS.new()
+	fl_sp.position = Vector2(540.0, 1680.0)
+	fl_sp.call("set_volume", 200)
+	fl_sp.call("set_stance", 0)                             # 0 == Stance.SPRAY (explicit)
+	var tg_sp: Node2D = TargetsS.new()
+	tg_sp.call("set_fleet", fl_sp)
+	var en_sp: Array = tg_sp.get("_enemies")
+	var rh_real: Dictionary = tg_sp.call("_new_enemy", TargetsS.KIND_RHOMBUS, 1450.0)
+	rh_real["pos"] = Vector2(540.0, 1450.0)                 # parked on the stream
+	rh_real["speed"] = 0.0
+	var rh_real_hp0: float = rh_real["hp"]
+	en_sp.append(rh_real)
+	var sp_hit_frames := 0
+	for i in 90:                                            # 1.5s of sustained fire
+		fl_sp.call("step", 1.0 / 60.0)
+		tg_sp.call("step", 1.0 / 60.0)                      # batched damage runs here (real wiring)
+		if int(fl_sp.call("spark_count")) > 0:              # sparks == bullets reached the volume
+			sp_hit_frames += 1
+	var rh_sp_alive: bool = tg_sp.get("_enemies").size() > 0
+	var rh_sp_frac: float = (float(rh_real["hp"]) / rh_real_hp0) if rh_sp_alive else 0.0
+	lines.append("8a spray-vs-rhombus: hits_landed_frames=%d rhombus_alive=%s hp_frac=%.2f kills=%d" % [
+		sp_hit_frames, rh_sp_alive, rh_sp_frac, tg_sp.get("kills")])
+	if sp_hit_frames <= 0:
+		lines.append("8a FAIL: SPRAY stream never reached the rhombus volume (collision not wired)"); ok = false
+	if not rh_sp_alive or int(tg_sp.get("kills")) != 0:
+		lines.append("8a FAIL: a SPRAY burst cracked a Rhombus (sub-threshold floor must absorb)"); ok = false
+	fl_sp.free()
+	tg_sp.free()
+
+	# 8b) The SAME setup flipped to LANCE cracks the Rhombus: heavy per-hit weight (6.0 ≥ floor)
+	#     deals full weighted damage through the batched path, killing it within a short burst.
+	gs.call("start_run")
+	gs.call("set_projectile_count", 200)
+	var fl_ln: Node2D = FleetS.new()
+	fl_ln.position = Vector2(540.0, 1680.0)
+	fl_ln.call("set_volume", 200)
+	fl_ln.call("set_stance", 1)                             # 1 == Stance.LANCE (heavy + pierce)
+	var tg_ln: Node2D = TargetsS.new()
+	tg_ln.call("set_fleet", fl_ln)
+	var en_ln: Array = tg_ln.get("_enemies")
+	var rh_ln: Dictionary = tg_ln.call("_new_enemy", TargetsS.KIND_RHOMBUS, 1450.0)
+	rh_ln["pos"] = Vector2(540.0, 1450.0); rh_ln["speed"] = 0.0
+	en_ln.append(rh_ln)
+	var ln_frames := 0
+	while tg_ln.get("_enemies").size() > 0 and ln_frames < 600:
+		fl_ln.call("step", 1.0 / 60.0)
+		tg_ln.call("step", 1.0 / 60.0)
+		ln_frames += 1
+	lines.append("8b lance-vs-rhombus: dead_after=%d frames (cap 600) kills=%d" % [
+		ln_frames, tg_ln.get("kills")])
+	if tg_ln.get("_enemies").size() > 0 or int(tg_ln.get("kills")) != 1:
+		lines.append("8b FAIL: a LANCE stream failed to crack/kill a Rhombus (per-hit floor not cleared)"); ok = false
+	# The LANCE crack must be MUCH faster than the SPRAY chip would be — qualitative depth check.
+	if ln_frames >= 90:
+		lines.append("8b FAIL: LANCE took as long as a sub-floor chip would (per-hit weight not applied)"); ok = false
+	if tg_ln.get("_enemies").size() == 0 and int(tg_ln.get("kills")) == 1 and ln_frames < 90:
+		lines.append("8b OK: LANCE cracks the Rhombus quickly where SPRAY (8a) could not — stance gates armor")
+	fl_ln.free()
+	tg_ln.free()
+
+	# 8c) SPRAY firepower (real Fleet, sub-split-tier volume) FEEDS a Fractal split — a Fractal
+	#     reaching 0 hp below FRACTAL_SPLIT_TIER splits into 2 fractlings rather than dying. This
+	#     re-asserts (6) through the real stance-weight path: SPRAY's light per-hit + low volume
+	#     is exactly the "insufficient firepower" case the splitter feeds on (#54 predicate kept).
+	var split_seen_c := [0]
+	ev.connect("enemy_split", func(_at): split_seen_c[0] += 1)
+	gs.call("start_run")
+	gs.call("set_projectile_count", 10)                     # < FRACTAL_SPLIT_TIER (60)
+	var fl_fc: Node2D = FleetS.new()
+	fl_fc.call("set_stance", 0)                             # SPRAY
+	var tg_fc: Node2D = TargetsS.new()
+	tg_fc.call("set_fleet", fl_fc)
+	var en_fc: Array = tg_fc.get("_enemies")
+	var dying_c: Dictionary = tg_fc.call("_new_enemy", TargetsS.KIND_FRACTAL, 200.0)
+	dying_c["hp"] = 0.0                                      # already at 0 — step resolves the split
+	en_fc.append(dying_c)
+	tg_fc.call("step", 1.0 / 60.0)
+	var fc_count: int = tg_fc.call("live_count")
+	var fc_all_fractlings := true
+	for e in tg_fc.get("_enemies"):
+		if int(e["kind"]) != TargetsS.KIND_FRACTLING:
+			fc_all_fractlings = false
+	lines.append("8c spray-feeds-split: enemies=%d (want 2) all_fractlings=%s kills=%d splits=%d" % [
+		fc_count, fc_all_fractlings, tg_fc.get("kills"), split_seen_c[0]])
+	if fc_count != 2 or not fc_all_fractlings or int(tg_fc.get("kills")) != 0 or split_seen_c[0] != 1:
+		lines.append("8c FAIL: SPRAY (low volume) did not feed a Fractal split into 2 fractlings"); ok = false
+	else:
+		lines.append("8c OK: SPRAY at sub-split-tier volume feeds a Fractal split — no clean kill")
+	fl_fc.free()
+	tg_fc.free()
+
+	# 8d) FAT boss-sized collider — a single very large damage volume (boss hull) is resolved by
+	#     consume_volumes with NO per-bullet bodies: bullets inside the big radius are absorbed
+	#     (SPRAY) or counted (LANCE), bullets outside are untouched, and the COUNT is exact. This
+	#     is the property #82/#83 (boss) leans on — one fat volume, not thousands of Area2Ds.
+	var fl_boss: Node2D = FleetS.new()
+	fl_boss.position = Vector2(540.0, 1680.0)
+	# Off-tree under -s, _ready() (which seeds _rng = 0xF1EE7) never fires, so the stream
+	# spread would be time-seeded → non-deterministic. Seed it explicitly here so the exact
+	# hull/decoy membership counts are reproducible run-to-run (this was the 8d flakiness:
+	# a jittered bullet occasionally landing in the hull∕decoy x-band overlap, #54).
+	(fl_boss.get("_rng") as RandomNumberGenerator).seed = 0xF1EE7
+	fl_boss.call("set_volume", 400)
+	fl_boss.call("set_stance", 0)                           # SPRAY (consume-on-hit, exact count)
+	for i in 60:
+		fl_boss.call("step", 1.0 / 60.0)
+	var boss_live0: int = fl_boss.call("live_count")
+	# Fat hull centred on the stream (radius 360 — boss-scale) + a decoy far in x (must cull).
+	# The stream is hard-bounded to x ∈ [540 - MAX_SPREAD, 540 + MAX_SPREAD] = [410, 670] (the
+	# spread clamp, RNG-independent). The decoy at x=40 r=360 has x-band [-320, 400], whose right
+	# edge (400) sits BELOW the stream floor (410): its boss-scale band is wide yet still clears
+	# the stream entirely, so the x-band cull MUST resolve it to zero hits no matter how the
+	# stream jitters. (Previously the decoy at x=60 had band right-edge 420, overlapping the
+	# stream's [410, 420] sliver, so ground-truth membership flipped 0↔1 with the RNG → flaky.)
+	var boss_pos := PackedVector2Array([Vector2(540.0, 1400.0), Vector2(40.0, 1400.0)])
+	var boss_rad := PackedFloat32Array([360.0, 360.0])
+	# Ground truth: count bullets actually inside each circle BEFORE consuming (independent check).
+	var proj_snapshot: Array = fl_boss.get("_proj")
+	var truth_in := 0
+	var truth_far := 0
+	for p in proj_snapshot:
+		if (p as Vector2).distance_to(boss_pos[0]) < boss_rad[0]:
+			truth_in += 1
+		if (p as Vector2).distance_to(boss_pos[1]) < boss_rad[1]:
+			truth_far += 1
+	var boss_hits: PackedInt32Array = fl_boss.call("consume_volumes", boss_pos, boss_rad)
+	var boss_live1: int = fl_boss.call("live_count")
+	lines.append("8d fat-collider: live %d->%d hull_hits=%d (truth %d) far_hits=%d (truth %d)" % [
+		boss_live0, boss_live1, boss_hits[0], truth_in, boss_hits[1], truth_far])
+	if boss_hits[0] != truth_in:
+		lines.append("8d FAIL: fat hull hit-count (%d) != bullets inside the radius (%d)" % [boss_hits[0], truth_in]); ok = false
+	if boss_hits[1] != truth_far or truth_far != 0:
+		lines.append("8d FAIL: far decoy volume absorbed bullets (x-band cull broke at boss scale)"); ok = false
+	if boss_live1 != boss_live0 - boss_hits[0]:
+		lines.append("8d FAIL: fat-collider absorption not conserved (bullets lost/double-counted)"); ok = false
+	if boss_hits[0] <= 0:
+		lines.append("8d FAIL: a boss-scale volume absorbed NO bullets (radius math wrong)"); ok = false
+	if ok:
+		lines.append("8d OK: a fat boss-sized collider is resolved by the volume math — exact, conserved, culled")
+	fl_boss.free()
 
 	tg.free()
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))

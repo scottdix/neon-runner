@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="PerkDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/perk_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+perk_name = "SWARM SEED"
+description = "Begin each run with a bigger swarm."
+accent = "cyan"
+effect = {
+"magnitude": 6.0,
+"op": "+",
+"stat": "SHOTS"
+}

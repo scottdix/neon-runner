@@ -71,6 +71,25 @@ var _splice_rate_mult: float = 1.0
 var _splice_spread_mult: float = 1.0
 var _splice_speed_mult: float = 1.0
 
+## --- Stance (#79) ------------------------------------------------------------
+## The fire mode, driven by GameState (gate polarity) over Events.stance_changed. SPRAY (0,
+## the default) is today's wide light wall: per-bullet weight 1.0, no pierce, base curves.
+## LANCE is a narrow heavy beam: each bullet hits HARD (clears the Rhombus per-hit FLOOR),
+## PIERCES through volumes, and the stream is fewer/converged/faster. The deltas compose
+## MULTIPLICATIVELY with the existing _splice_* mults (stance × splice). `_stance` defaults
+## to 0 (== Stance.SPRAY) so a bare Fleet.new() in a unit test behaves exactly as today.
+const SPRAY_HIT_WEIGHT := 1.0
+## LANCE per-bullet weight, set ABOVE Targets.RHOMBUS_PER_HIT_FLOOR (5.0) so a LANCE bullet
+## CRACKS armor where a SPRAY bullet (1.0 < floor) only chips it. This is the Fusillade tax:
+## SPRAY trades raw per-hit power for width + bullet count.
+const LANCE_HIT_WEIGHT := 6.0
+## Behavioural deltas so the two stances LOOK different. SPRAY uses 1.0 for all three (today's
+## BASE_* curves unchanged = the verify_combat invariant); LANCE fires fewer, narrower, faster.
+const LANCE_RATE_MULT := 0.45      # fewer shots/sec
+const LANCE_SPREAD_MULT := 0.18    # converged / narrow stream
+const LANCE_SPEED_MULT := 1.4      # longer range / faster bullets
+var _stance: int = 0               # 0 == GameState.Stance.SPRAY (the run default)
+
 
 func _ready() -> void:
 	_rng.seed = 0xF1EE7
@@ -83,6 +102,9 @@ func _ready() -> void:
 	apply_splice()
 	# React to swarm-volume changes from the economy (gates -> GameState -> Events).
 	Events.projectile_count_changed.connect(set_volume)
+	# React to stance flips (gate polarity -> GameState -> Events). Bind the int `stance`
+	# arg of stance_changed(stance, is_spray); idempotent (just stores _stance).
+	Events.stance_changed.connect(set_stance)
 
 
 ## Read the equipped Splice (SpliceLab.active_modifiers()) and fold it into the run's effective
@@ -138,7 +160,7 @@ func step(delta: float) -> void:
 	# (Targets call consume_near() to remove + spark + damage on contact.)
 	var top_cutoff := -ORB_QUAD
 	var survivors: Array[Vector2] = []
-	var step_speed: float = PROJ_SPEED * _splice_speed_mult
+	var step_speed: float = PROJ_SPEED * _splice_speed_mult * _stance_speed_mult()
 	for p in _proj:
 		var np := Vector2(p.x, p.y - step_speed * delta)
 		if np.y > top_cutoff:
@@ -174,6 +196,40 @@ func _fire(shots: int) -> void:
 		fired += 1
 	if fired > 0:
 		Events.fleet_fired.emit(fired)
+
+
+## Set the fire stance (#79). Connected to Events.stance_changed (binds the int arg);
+## idempotent — just stores `_stance`, the behaviour is read live in the fold sites below.
+func set_stance(s: int) -> void:
+	_stance = s
+
+
+## Per-bullet DAMAGE WEIGHT of one bullet in the current stance (#79). LANCE bullets hit
+## heavy (clear the Rhombus FLOOR); SPRAY bullets are light. Targets multiplies the raw
+## hit-COUNT it gets from consume_volumes by this to get damage (the count shape is unchanged).
+func hit_weight() -> float:
+	return LANCE_HIT_WEIGHT if _stance == GameState.Stance.LANCE else SPRAY_HIT_WEIGHT
+
+
+## Whether bullets PIERCE in the current stance (#79). LANCE bullets pass through a volume
+## and keep scoring volumes behind it (and are not consumed); SPRAY consumes on first match.
+func is_piercing() -> bool:
+	return _stance == GameState.Stance.LANCE
+
+
+## Stance fire-rate multiplier (LANCE fires fewer shots; SPRAY is neutral 1.0).
+func _stance_rate_mult() -> float:
+	return LANCE_RATE_MULT if _stance == GameState.Stance.LANCE else 1.0
+
+
+## Stance spread multiplier (LANCE converges the stream; SPRAY is neutral 1.0).
+func _stance_spread_mult() -> float:
+	return LANCE_SPREAD_MULT if _stance == GameState.Stance.LANCE else 1.0
+
+
+## Stance projectile-speed multiplier (LANCE is faster/longer range; SPRAY is neutral 1.0).
+func _stance_speed_mult() -> float:
+	return LANCE_SPEED_MULT if _stance == GameState.Stance.LANCE else 1.0
 
 
 func set_volume(count: int) -> void:
@@ -232,8 +288,12 @@ func shatter_count() -> int:
 ## (#68). With NO splice _splice_rate_mult is 1.0, so this equals today's formula exactly
 ## (verify_combat invariant). The clamp still bounds the result to the design rate window.
 func _effective_fire_rate(volume: int) -> float:
+	# Clamp the splice-folded base to today's window FIRST, then apply the stance multiplier —
+	# so LANCE_RATE_MULT (0.45) actually lowers the rate instead of being clamped back up to
+	# BASE_FIRE_RATE (the floor must follow the stance, not fight it). SPRAY mult is 1.0 = today.
 	var base := BASE_FIRE_RATE + float(volume) * FIRE_RATE_PER_VOLUME
-	return clampf(base * _splice_rate_mult, BASE_FIRE_RATE, MAX_FIRE_RATE * maxf(1.0, _splice_rate_mult))
+	var rate := clampf(base * _splice_rate_mult, BASE_FIRE_RATE, MAX_FIRE_RATE * maxf(1.0, _splice_rate_mult))
+	return rate * _stance_rate_mult()
 
 
 ## Stream spread (px) for the current volume, with the Splice spread_mult folded in. Neutral
@@ -241,7 +301,7 @@ func _effective_fire_rate(volume: int) -> float:
 func _effective_spread() -> float:
 	var base := clampf(
 		BASE_SPREAD + float(_volume) * SPREAD_PER_VOLUME, BASE_SPREAD, MAX_SPREAD)
-	return base * _splice_spread_mult
+	return base * _splice_spread_mult * _stance_spread_mult()
 
 
 ## Consume (remove + spark) projectiles within `radius` of a single world point and
@@ -270,6 +330,10 @@ func consume_volumes(positions: PackedVector2Array, radii: PackedFloat32Array) -
 	r2.resize(n)
 	for i in n:
 		r2[i] = radii[i] * radii[i]
+	# Stance (#79): in LANCE the bullet PIERCES — it scores a volume but is not consumed and
+	# keeps scanning the rest, so it can hit volumes lined up behind it, then survives the
+	# frame. In SPRAY (the default) it consumes-on-first-match exactly as today.
+	var pierce: bool = is_piercing()
 	var survivors: Array[Vector2] = []
 	for p in _proj:
 		var absorbed := false
@@ -279,17 +343,41 @@ func consume_volumes(positions: PackedVector2Array, radii: PackedFloat32Array) -
 			if p.distance_squared_to(positions[i]) < r2[i]:
 				hits[i] += 1
 				_sparks.append({"pos": p, "life": SPARK_LIFE})
+				if pierce:
+					continue                                # LANCE: pass through, score more
 				absorbed = true
 				break
-		if not absorbed:
-			survivors.append(p)
+		if pierce or not absorbed:
+			survivors.append(p)                             # LANCE keeps every bullet
 	_proj = survivors
 	return hits
+
+
+## Apply a Singularity-style GRAVITY BIAS to every live bullet for one frame (#83). `provider` is a
+## node exposing the pure `gravity_on_projectile(pos, delta) -> Vector2` helper (the Singularity boss);
+## each bullet is nudged by that Δvelocity*dt toward the vortex core, so a bullet sailing up through a
+## positive (+/×) gate band is dragged OFF it — the economy inversion the boss is built on. PURE +
+## headless: it only mutates the live position array (no GPU), so the verify drives it directly and
+## asserts a bullet leaves a gate band. No-op without a provider (today's behaviour for a normal run).
+func apply_gravity_bias(provider: Object, delta: float) -> void:
+	if provider == null or not provider.has_method("gravity_on_projectile"):
+		return
+	for i in _proj.size():
+		var dv: Vector2 = provider.call("gravity_on_projectile", _proj[i], delta)
+		# dv is already a per-frame Δposition (accel * dt² folded into the helper's *delta), so add it
+		# straight onto the bullet's position — a velocity-integrated nudge toward the core.
+		_proj[i] = _proj[i] + dv * delta
 
 
 ## Number of live projectiles — the value headless tests assert on.
 func live_count() -> int:
 	return _proj.size()
+
+
+## Read-only snapshot of the live bullet positions — lets the verify assert that a bullet on a gate
+## band actually leaves it after a gravity bias. (Pure accessor; no copy-back path.)
+func projectiles() -> PackedVector2Array:
+	return PackedVector2Array(_proj)
 
 
 ## Number of live impact sparks — asserted by the headless absorption test.

@@ -62,6 +62,15 @@ func is_positive() -> bool:
 	return operation == Operation.ADD or operation == Operation.MULTIPLY
 
 
+## The STANCE this gate sets when crossed (#79): ADD/MULTIPLY open the stream into a wide
+## SPRAY, SUBTRACT/DIVIDE converge it into a heavy LANCE. A parallel read off `operation`
+## (mirrors is_positive()). NOTE: this does NOT touch trigger()/apply() economy math —
+## GameState still derives the live stance from `gate_type` in gate_passed; sets_stance()
+## exists for the spawner telegraph + gate visuals so they can preview the upcoming mode.
+func sets_stance() -> int:
+	return GameState.Stance.SPRAY if is_positive() else GameState.Stance.LANCE
+
+
 func contains_x(x: float) -> bool:
 	return x >= span_min and x < span_max
 

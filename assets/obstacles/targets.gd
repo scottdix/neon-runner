@@ -40,6 +40,15 @@ const DAMAGE_PER_BULLET := 10.0
 ## thinned-out Rhombus literally unkillable — a sustained sub-armor stream now eventually
 ## wins, while a single stray hit stays negligible (one frame = 0.15 bullet ≈ 1.5 hp).
 const ARMOR_CHIP_FRACTION := 0.15
+## Rhombus per-hit armor FLOOR (#79): the per-bullet DAMAGE WEIGHT a single bullet must
+## reach to CRACK an armored enemy. A SPRAY bullet (weight 1.0) is below it -> chips only; a
+## LANCE bullet (weight 6.0) clears it -> full damage. This replaces the old "hits above an
+## int armor count" model with a per-hit threshold: armor is now a quality gate (need a heavy
+## bullet), not a quantity gate (need many bullets). Set above SPRAY_HIT_WEIGHT, below LANCE.
+const RHOMBUS_PER_HIT_FLOOR := 5.0
+## Per-run difficulty seam (#80 populates; #79 ships the field + neutral default). Scales the
+## per-hit floor so a harder mode demands an even heavier bullet to crack armor.
+var armor_floor_mult: float = 1.0
 const CONSUME_PAD := 10.0           # collision radius = visible half-size + this
 const FLASH_DECAY := 0.08           # seconds an impact flash-pulse lasts
 const BURST_LIFE := 0.30            # seconds a death burst lives
@@ -133,6 +142,21 @@ func scheduled_wave_count() -> int:
 	return _waves.size()
 
 
+## Spawn a single boss ADD (#82/#83). The Boss declares add INTENT only ({kind, x}) and run.gd
+## hands each queued add here every frame — the boss never holds a Targets ref (decoupled). The
+## add enters from above the top like a wave enemy, at the boss's authored world-x (edge-clamped).
+## No-op once the field is full so a long boss fight can't overflow the live set.
+func spawn_add(a: Dictionary) -> void:
+	if _enemies.size() >= MAX_ENEMIES:
+		return
+	var kind: int = _kind_from_string(String(a.get("kind", "glitch")))
+	var e: Dictionary = _new_enemy(kind, -float(STATS[kind]["size"]))
+	var p: Vector2 = e["pos"]
+	p.x = clampf(float(a.get("x", _design.x * 0.5)), WAVE_EDGE_MARGIN, _design.x - WAVE_EDGE_MARGIN)
+	e["pos"] = p
+	_enemies.append(e)
+
+
 ## Immediately spawn n enemies (weighted archetype mix) scattered down the upper track.
 ## Not the gameplay path (that's scheduled waves) — kept for tests / ad-hoc bursts.
 func spawn(n: int) -> void:
@@ -221,9 +245,13 @@ func step(delta: float) -> void:
 			positions.append(e["pos"])
 			radii.append(_hit_radius(e))
 		var hits: PackedInt32Array = _fleet.call("consume_volumes", positions, radii)
+		# Per-hit damage WEIGHT + pierce flag of the current stance (#79), fetched ONCE per
+		# frame. Null-safe: a bare unit-test Targets with no fleet falls back to SPRAY (1.0).
+		var hw: float = float(_fleet.call("hit_weight")) if _fleet.has_method("hit_weight") else 1.0
+		var pierce: bool = bool(_fleet.call("is_piercing")) if _fleet.has_method("is_piercing") else false
 		for i in _enemies.size():
 			if hits[i] > 0:
-				_apply_damage(_enemies[i], hits[i])
+				_apply_damage(_enemies[i], hits[i], hw, pierce)
 
 	# (2) Movement + lifecycle. Rebuild the live set: survivors are kept, dead/breached/
 	# offscreen are dropped (finite — no respawn), Fractal splits + multiply-through clones
@@ -287,27 +315,61 @@ func _hit_radius(e: Dictionary) -> float:
 	return float(e["size"]) * 0.5 * (0.55 + 0.45 * frac) + CONSUME_PAD
 
 
-## Apply a frame's worth of bullet hits to an enemy, honoring its armor: a RHOMBUS
-## takes the hits ABOVE its armor value at full damage, so a swarm dense enough to
-## overwhelm the armor cracks it fast. A stream AT/BELOW the armor still does a small
-## CHIP (#74) — not a hard wall — so a sustained thin stream eventually wins instead of
-## being permanently locked out (the "unkillable magenta enemy" bug), while a single
-## stray hit stays negligible. Always flashes on any hit.
-func _apply_damage(e: Dictionary, hits: int) -> void:
+## Apply a frame's worth of bullet hits to an enemy (#79 per-hit FLOOR model). `hits` is the
+## raw bullet COUNT from Fleet.consume_volumes; `hit_weight` is the DAMAGE of ONE bullet in the
+## current stance (SPRAY 1.0, LANCE 6.0). Armor is now a per-hit QUALITY gate, not a count gate:
+##   • UNARMORED (Glitch/Fractling/Fractal): full damage = hits * hit_weight * DAMAGE_PER_BULLET.
+##   • ARMORED (Rhombus): each bullet must clear RHOMBUS_PER_HIT_FLOOR * armor_floor_mult to
+##     CRACK it. A LANCE bullet (6.0) clears the floor -> full hits * hit_weight damage; a SPRAY
+##     bullet (1.0) is SUB-THRESHOLD -> only a CHIP grind (ARMOR_CHIP_FRACTION per frame; #80
+##     makes this mode-scaled, and a chip fraction of 0 == TRUE immunity). So a thin/light stream
+##     can't crack armor by sheer count — you must focus into a LANCE — while a sustained SPRAY
+##     still eventually grinds it down (no permanent lockout, #74).
+## Defaulted args so verify_combat's existing direct _apply_damage(e, hits) calls still pass.
+func _apply_damage(e: Dictionary, hits: int, hit_weight: float = 1.0, _pierce: bool = false) -> void:
 	if hits <= 0:
 		return
 	var armor: int = int(e.get("armor", 0))
-	var effective: int = maxi(0, hits - armor)
-	if effective > 0:
-		e["hp"] = float(e["hp"]) - float(effective) * DAMAGE_PER_BULLET
+	var per_hit: float = hit_weight                          # damage weight of ONE bullet
+	if armor > 0 and per_hit < RHOMBUS_PER_HIT_FLOOR * armor_floor_mult:
+		# Sub-threshold on an armored enemy: chip grind (no crack). chip_fraction == 0 (Hard,
+		# #80) makes this a true 0 — full immunity until the player switches to a LANCE.
+		e["hp"] = float(e["hp"]) - _armor_chip_fraction() * DAMAGE_PER_BULLET
 	else:
-		# Sub-armor stream: chip slowly rather than zero damage (no lockout, #74).
-		e["hp"] = float(e["hp"]) - ARMOR_CHIP_FRACTION * DAMAGE_PER_BULLET
+		# Cracks (LANCE on armor) or any hit on an unarmored enemy: full weighted damage.
+		e["hp"] = float(e["hp"]) - float(hits) * per_hit * DAMAGE_PER_BULLET
 	e["flash"] = 1.0
+
+
+## The sub-threshold armor chip fraction (#74/#80) — now MODE-SCALED via Difficulty. EASY 0.45
+## chips faster (forgiving), MEDIUM 0.15 (== the ARMOR_CHIP_FRACTION const fallback), HARD 0.0
+## = TRUE immunity (sub-threshold SPRAY does 0 damage → Lance mandatory to crack a Rhombus).
+## Null-safe: a bare unit-test Targets with no autoload tree falls back to the MEDIUM const.
+func _armor_chip_fraction() -> float:
+	var diff: Node = _difficulty_node()
+	if diff != null:
+		return float(diff.call("armor_chip_fraction"))
+	return ARMOR_CHIP_FRACTION
+
+
+## Null-safe handle to the Difficulty autoload (mirrors the bare-instance test path). Returns
+## null if the autoload tree isn't present (pure-logic unit tests new() a Targets directly).
+func _difficulty_node() -> Node:
+	var loop := Engine.get_main_loop()
+	if loop is SceneTree:
+		var r: Node = (loop as SceneTree).root
+		return r.get_node_or_null("Difficulty")
+	return null
 
 
 ## A 0-HP enemy that should SPLIT rather than die: a Fractal hit with insufficient
 ## firepower (swarm volume below the split tier). The two fractlings replace it.
+## Stance interaction (#79, predicate UNCHANGED): SPRAY produces MORE hits per frame at a
+## big swarm volume, so it naturally pushes the volume past FRACTAL_SPLIT_TIER and FEEDS the
+## splitter via this existing gate; a LANCE's heavy single bullet can exceed the split tier's
+## effective damage. We keep keying on GameState.projectile_count (not a stance/per-hit test)
+## so the split path's behaviour is unchanged beyond the now weight-aware damage math (#54's
+## open question of switching this predicate is DEFERRED).
 func _is_splitting_fractal(e: Dictionary) -> bool:
 	return int(e.get("kind", KIND_GLITCH)) == KIND_FRACTAL \
 		and bool(e.get("split", true)) \
@@ -382,6 +444,32 @@ func _kill(e: Dictionary) -> void:
 		_bursts.append({"pos": e["pos"], "life": BURST_LIFE, "col": _enemy_color(e)})
 	Events.enemy_destroyed.emit(e["pos"], points)
 	Events.trigger_grid_ripple.emit(e["pos"], false)   # the reactive grid warps under the kill
+	Events.token_dropped.emit(e["pos"], _token_value(e))  # #78: spawn a collectable token bounty
+
+
+## Token bounty for a killed enemy (#78): the meta currency a kill drops, distinct from score.
+## Tougher archetypes pay more (Glitch/Fractling low, Fractal mid, Rhombus high), scaled by the
+## player's drafted token-bounty multiplier. Null-safe: a bare unit-test Targets with no autoload
+## tree (or no draft perks) gets the flat base bounty.
+func _token_value(e: Dictionary) -> int:
+	var base: int
+	match int(e.get("kind", KIND_GLITCH)):
+		KIND_RHOMBUS: base = 5
+		KIND_FRACTAL: base = 3
+		KIND_FRACTLING: base = 1
+		_: base = 1                       # Glitch + default
+	return int(round(float(base) * _bounty_mult()))
+
+
+## Null-safe drafted token-bounty multiplier (#78). Reads SpliceLab.bounty_mult() when the
+## autoload tree is present; falls back to 1.0 for pure-logic unit tests that new() a Targets.
+func _bounty_mult() -> float:
+	var loop := Engine.get_main_loop()
+	if loop is SceneTree:
+		var lab: Node = (loop as SceneTree).root.get_node_or_null("SpliceLab")
+		if lab != null and lab.has_method("bounty_mult"):
+			return float(lab.call("bounty_mult"))
+	return 1.0
 
 
 ## An enemy reached the ship line: it breaches, draining the Glow Battery by its breach
@@ -394,11 +482,16 @@ func _breach(e: Dictionary) -> void:
 	Events.trigger_grid_ripple.emit(e["pos"], true)    # heavier inward pulse on a breach
 
 
+## Weighted archetype roll (#80 secondary): a harder mode biases the mix toward the armored
+## Rhombus (rhombus_weight_bias is +0.10 on HARD, 0.0 on EASY/MEDIUM = today's weights — additive,
+## so MEDIUM is a no-op vs the pre-#80 mix). Null-safe: a bare unit-test Targets falls back to 0.0.
 func _pick_kind() -> int:
+	var diff: Node = _difficulty_node()
+	var rhombus_w: float = 0.15 + (float(diff.call("rhombus_weight_bias")) if diff != null else 0.0)
 	var roll: float = _rng.randf()
-	if roll < 0.15:
+	if roll < rhombus_w:
 		return KIND_RHOMBUS
-	elif roll < 0.40:
+	elif roll < rhombus_w + 0.25:
 		return KIND_FRACTAL
 	return KIND_GLITCH
 
