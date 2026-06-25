@@ -37,12 +37,30 @@ func _initialize() -> void:
 	if _scene == null:
 		_lines.append("instantiate FAIL: %s" % SCENE)
 		_lines.append("RESULT=FAIL"); _write(); return
-	root.add_child(_scene)
-	_lines.append("scene up: %s instantiated + added" % SCENE)
+	# Defer adding the scene to the FIRST _process frame (below), NOT here. Under `-s`,
+	# autoload _ready is deferred — Settings._ready calls load_settings(), which FORCES
+	# poc_mode = HORDE. If we set LEGACY now it gets clobbered by that deferred _ready before
+	# the scene's own _ready (start_run / set_schedule) runs. By the first _process frame all
+	# deferred _ready callbacks have fired, so forcing LEGACY there sticks.
 
 
 func _process(_delta: float) -> bool:
 	_frame += 1
+
+	if _scene.get_parent() == null:
+		# Force LEGACY before the scene's _ready runs: this smoke asserts the enemy WAVE schedule
+		# is wired from the level (scheduled_wave_count > 0). HORDE (the forced default) uses the
+		# continuous fodder spawner with an EMPTY enemy_waves, so that assertion only holds on the
+		# authored-waves path. Set the global Settings.poc_mode field directly (0 = LEGACY); do NOT
+		# call set_poc_mode (it persists). Production reads this same live autoload field. Done here
+		# (first frame), after the deferred Settings.load_settings() that would otherwise re-force HORDE.
+		var s: Node = root.get_node_or_null("Settings")
+		if s != null:
+			s.set("poc_mode", 0)
+		root.add_child(_scene)
+		_lines.append("scene up: %s instantiated + added" % SCENE)
+		return false
+
 	if _frame < RUN_FRAMES:
 		return false                # keep ticking _ready/_process/_render on all nodes
 

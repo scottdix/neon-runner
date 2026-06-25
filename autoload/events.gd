@@ -127,6 +127,14 @@ signal difficulty_changed(mode: int)
 ## to show/hide live; Settings persists the bool. Single owner = Settings.
 signal perf_overlay_changed(enabled: bool)
 
+# --- Debug (HORDE designer tuning autoload) ----------------------------------
+## A Debug autoload field changed (toggle/multiplier/cap/placeholder). Emitted by every Debug
+## setter on an ACTUAL change; the Debug menu UI relights off this and live systems (Targets /
+## TokenLayer / gates) re-read their Debug accessors. Single owner = Debug (persists to
+## user://debug.cfg). One coarse signal (no payload) — consumers pull the specific field they need
+## from the live Debug node, so adding a new debug field never grows this signal's contract.
+signal debug_changed
+
 # --- Loadout / Splice (meta-progression: #67 garage, #68 splice lab) ----------
 ## The player's ship loadout changed (hull / trail / engine). Garage commits via the
 ## Loadout autoload; the in-run ship recolours. Consumers read Loadout for the new values.
@@ -189,6 +197,10 @@ signal overdrive_toggle_requested
 ## active steer bounds: a sub-range LOCKS the ship into one lane (the 7-s commitment), the full
 ## steerable width RELEASES it. Player binds this and intersects it into its set_target_x clamp.
 signal lane_clamp_changed(min_x: float, max_x: float)
+## HORDE (POC 4) lane-boss spawned (#H4). A heavy boss enemy armed on one side of the firing divider.
+## `side` is the divider side it occupies (0=left of CENTER_X, 1=right); `at` is its spawn position.
+## Hook for boss vfx/audio/HUD; the HORDE arena/targets system emits it. Inert in the other POC modes.
+signal lane_boss_spawned(side: int, at: Vector2)
 
 ## A gravity field is active (PhaseDirector when the live phase's gravity != 0; the Singularity
 ## boss REUSES this — there is no boss-specific gravity signal). `direction` is a NORMALIZED unit

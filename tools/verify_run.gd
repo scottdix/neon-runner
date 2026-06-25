@@ -45,6 +45,15 @@ func _initialize() -> void:
 	# applied by GameState, not the spawner — review-debt decoupling).
 	gs.call("wire_events")
 
+	# This slice verifies the LEGACY economy core: 20-volume seed, −/÷ gates, and battery
+	# drain-on-negative-gate. The game is now locked to forced-HORDE (firepower-as-health,
+	# +/×-only gates, inert battery, 40-volume seed), which parks all of that. Drive the global
+	# Settings autoload back to LEGACY so production's poc_mode reads run the parked path. Set the
+	# field directly (not set_poc_mode, which persists).
+	var settings_node: Node = root.get_node_or_null("Settings")
+	if settings_node:
+		settings_node.set("poc_mode", 0)   # 0 = PocMode.LEGACY
+
 	# 4) GameState economy: start_run seeds the swarm; clamp never goes negative.
 	gs.call("start_run")
 	var seeded: int = gs.get("projectile_count")

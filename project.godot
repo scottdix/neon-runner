@@ -34,6 +34,12 @@ Palette="*res://autoload/palette.gd"
 Fonts="*res://autoload/fonts.gd"
 ; Persisted player options (haptics + AMOLED). Depends on Events (emits on change).
 Settings="*res://autoload/settings.gd"
+; HORDE designer-tuning knobs (P2): spawn toggles, density/speed/strength/firepower multipliers, a
+; soft enemy spawn cap, gate toggle, + bullet pass-through placeholders. Opened from the PAUSE
+; overlay's DEBUG button; persists to its OWN user://debug.cfg. Depends on Events (emits
+; debug_changed on change). Registered AFTER Settings and BEFORE GameState (live systems read its
+; null-safe accessors during a run).
+Debug="*res://autoload/debug.gd"
 ; Per-mode difficulty tuning (#80): maps Settings.difficulty -> a DifficultyProfile of
 ; multipliers (armor chip / drain / spawn density). Depends on Events + Settings (reads the int);
 ; registered BEFORE GameState, which reads drain_mult() through it.

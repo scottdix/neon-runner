@@ -34,6 +34,13 @@ func _initialize() -> void:
 	var gs: Node = root.get_node_or_null("GameState")
 	if ev == null or gs == null:
 		lines.append("RESULT=FAIL (autoloads missing)"); _write(lines); return
+	# HORDE is now force-locked, which disables the gate->stance coupling (the boss-arena stance
+	# gates in section 6 only flip stance under the LEGACY POC). This verify exercises that parked
+	# LEGACY stance-gate behaviour, so set the global Settings.poc_mode to LEGACY (0) for the test.
+	# Set the field directly (NOT set_poc_mode, which persists) so production's Settings read sees LEGACY.
+	var settings: Node = root.get_node_or_null("Settings")
+	if settings:
+		settings.set("poc_mode", 0)   # 0 = PocMode.LEGACY
 	# GameState.Stance enum values (SPRAY=0, LANCE=1 by contract) — bare `GameState` doesn't compile
 	# in the -s main tool script (use the literals, mirroring verify_stance.gd).
 	var GS_SPRAY := 0

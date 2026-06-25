@@ -60,7 +60,12 @@ func _process(delta: float) -> void:
 		_step_kinetic(delta)
 	elif _mode == Settings.PocMode.GEOM_OVERDRIVE:
 		_step_geom(delta)
-	# else LEGACY: gates own the stance; nothing to drive here.
+	# else LEGACY/HORDE: gates own the stance; nothing to drive here. HORDE (#90) intentionally falls
+	# through to this branch. Its level DOES author +/× firepower-recovery gates, but the gate→stance
+	# coupling is LEGACY-ONLY (game_state.gd: set_stance(LANCE) is gated on poc_mode == LEGACY), and
+	# HORDE's gates are +/× anyway (only −/÷ flips to LANCE) — so NO gate ever flips the stance and the
+	# run stays SPRAY-only BY DESIGN (the laneboss-beatable verify assumes SPRAY DPS). The missing LANCE
+	# path in HORDE is a deliberate constraint, not a wiring gap.
 
 
 # --- KINETIC_CLUTCH (POC 2) --------------------------------------------------

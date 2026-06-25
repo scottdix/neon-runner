@@ -1,0 +1,40 @@
+[gd_resource type="Resource" script_class="LevelDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/level_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+display_name = "Horde"
+length_m = 600.0
+scroll_speed_mps = 8.0
+has_boss = false
+gate_formations = [{
+"m": 80.0,
+"l": ["add", 8.0],
+"r": ["mul", 2.0]
+}, {
+"m": 160.0,
+"l": ["mul", 2.0],
+"r": ["add", 10.0]
+}, {
+"m": 240.0,
+"l": ["add", 12.0],
+"r": ["mul", 3.0]
+}, {
+"m": 320.0,
+"l": ["mul", 2.0],
+"r": ["add", 9.0]
+}, {
+"m": 400.0,
+"l": ["add", 15.0],
+"r": ["mul", 3.0]
+}, {
+"m": 480.0,
+"l": ["mul", 2.0],
+"r": ["add", 11.0]
+}, {
+"m": 560.0,
+"l": ["add", 14.0],
+"r": ["mul", 3.0]
+}]
+enemy_waves = []

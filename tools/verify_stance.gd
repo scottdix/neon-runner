@@ -33,6 +33,14 @@ func _initialize() -> void:
 		lines.append("RESULT=FAIL (autoloads missing)"); _write(lines); return
 	gs.call("wire_events")
 
+	# The gate→stance coupling (#79) is LEGACY-only; the batch forced Settings.poc_mode to HORDE,
+	# which locks the stream to SPRAY and disables gate-driven flips. Restore the LEGACY path so the
+	# parked gate-polarity → stance behaviour under test actually runs. Set the field directly (do
+	# NOT call set_poc_mode, which would persist). 0 = PocMode.LEGACY.
+	var settings: Node = root.get_node_or_null("Settings")
+	if settings != null:
+		settings.set("poc_mode", 0)
+
 	var SPRAY: int = 0   # GameState.Stance.SPRAY == 0 by contract
 	var LANCE: int = 1   # GameState.Stance.LANCE
 

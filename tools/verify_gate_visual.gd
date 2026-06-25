@@ -92,32 +92,51 @@ func _initialize() -> void:
 	else:
 		ok = false
 
-	# Enemy danger band = the reserved RED→MAGENTA→VIOLET hue range the Palette enemies live in.
-	# Derive the band empirically from the Palette.ENEMY_* constants (no magic numbers): take the
-	# min/max HUE across the enemy set and assert NO family hue lands inside it.
-	var enemy_cols := [
+	# Enemy danger band = the reserved PINK→MAGENTA→VIOLET hue range the FODDER enemies live in.
+	# #90 HORDE recolour: Rhombus was deliberately moved to NEON GREEN (a different hue) to contrast
+	# the pink fodder, so it is NOT part of the reserved danger band — including it here would make a
+	# naive min/max sweep span green→violet and falsely flag the cyan/teal LANCE+UTILITY gates. The
+	# reserved fodder band is Glitch (hot pink), Fractal (violet) and Fractling (hot-pink shard) —
+	# plus the legacy Rose — i.e. the magenta-rose→violet fodder family. Derive the band empirically
+	# from those constants (no magic numbers) and assert NO gate-family hue lands inside it. The
+	# green Rhombus is handled by a separate distinguishability guard below.
+	var fodder_cols := [
 		Color(pal.get("ENEMY_ROSE")), Color(pal.get("ENEMY_GLITCH")),
-		Color(pal.get("ENEMY_RHOMBUS")), Color(pal.get("ENEMY_RHOMBUS_CORE")),
 		Color(pal.get("ENEMY_FRACTAL")), Color(pal.get("ENEMY_FRACTLING")),
 	]
 	var ehmin := 1.0
 	var ehmax := 0.0
-	for ec in enemy_cols:
+	for ec in fodder_cols:
 		var h: float = ec.h
 		ehmin = minf(ehmin, h)
 		ehmax = maxf(ehmax, h)
-	lines.append("enemy band: hue [%.3f, %.3f]" % [ehmin, ehmax])
+	lines.append("fodder band: hue [%.3f, %.3f] (pink/magenta/violet; green Rhombus excluded)" % [ehmin, ehmax])
 	var band_ok := true
 	for i in cols.size():
 		var fh: float = cols[i].h
 		var inside: bool = fh >= ehmin and fh <= ehmax
-		lines.append("  %s hue=%.3f inside-enemy-band=%s" % [names[i], fh, inside])
+		lines.append("  %s hue=%.3f inside-fodder-band=%s" % [names[i], fh, inside])
 		if inside:
 			band_ok = false
 	if band_ok:
-		lines.append("band OK: no gate-family hue collides with the enemy danger band")
+		lines.append("band OK: no gate-family hue collides with the enemy fodder (pink→violet) band")
 	else:
-		lines.append("band FAIL: a gate family shares the enemy RED→MAGENTA→VIOLET hue band"); ok = false
+		lines.append("band FAIL: a gate family shares the enemy PINK→MAGENTA→VIOLET fodder band"); ok = false
+
+	# Separate guard: the deliberately-GREEN Rhombus must still be hue-distinguishable from every
+	# gate family (it's a different hue on purpose, not part of the band, but must not collide).
+	var rhombus_h: float = Color(pal.get("ENEMY_RHOMBUS")).h
+	var green_ok := true
+	for i in cols.size():
+		var dh: float = absf(cols[i].h - rhombus_h)
+		dh = minf(dh, 1.0 - dh)  # circular hue distance
+		lines.append("  %s vs green-Rhombus Δhue=%.3f" % [names[i], dh])
+		if dh < 0.03:
+			green_ok = false
+	if green_ok:
+		lines.append("green OK: every gate family is hue-distinguishable from the green Rhombus")
+	else:
+		lines.append("green FAIL: a gate family collides with the green Rhombus hue"); ok = false
 
 	# 4) Ghosting lowers EFFECTIVE brightness + saturation vs the un-ghosted family hue.
 	#    Needs the panel built — add_child a math gate and await its _ready.

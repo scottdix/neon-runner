@@ -8,12 +8,17 @@ extends CanvasLayer
 ## RESUME/QUIT. Layer 10 keeps it above the HUD.
 
 const UI := preload("res://assets/ui/ui_kit.gd")
+const DebugMenu := preload("res://assets/ui/debug_menu.gd")
+
+var _debug_menu: CanvasLayer = null
 
 
 func _ready() -> void:
 	layer = 100                                 # top of the run z-order (above flash/HUD/milestone)
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
+	_debug_menu = DebugMenu.new()               # own CanvasLayer (layer 110, above this overlay)
+	add_child(_debug_menu)
 	_build()
 
 
@@ -40,8 +45,13 @@ func _build() -> void:
 	add_child(resume)
 	UI.hit_overlay(resume).pressed.connect(_on_resume)
 
+	var debug := UI.outline_button("DEBUG", Palette.MENU_GOLD_HUD, Vector2(660.0, 120.0), 28)
+	UI.center_x(debug, 1190.0)
+	add_child(debug)
+	UI.hit_overlay(debug).pressed.connect(_on_debug)
+
 	var quit := UI.outline_button("QUIT TO MENU", cyan, Vector2(660.0, 120.0), 28)
-	UI.center_x(quit, 1190.0)
+	UI.center_x(quit, 1340.0)
 	add_child(quit)
 	UI.hit_overlay(quit).pressed.connect(SceneManager.goto_title)
 
@@ -49,3 +59,8 @@ func _build() -> void:
 func _on_resume() -> void:
 	visible = false
 	SceneManager.resume_run()
+
+
+## Open the Debug menu over the pause overlay (run stays paused). It reads live Debug values on open.
+func _on_debug() -> void:
+	_debug_menu.open()

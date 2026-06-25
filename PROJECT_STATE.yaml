@@ -3,9 +3,30 @@ schema_version: 1
 # Read at /session-start, advanced at /handoff. History depth is 2
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
-  date: "2026-06-24"
-  session: 24
+  date: "2026-06-25"
+  session: 25
   notes: >
+    Session 25 (ULTRACODE): THE PIVOT — Neon Splice is now a twin-lane HORDE survival shooter, LOCKED as the
+    core game (mode selector removed; Settings.poc_mode forced to HORDE; LEGACY/KINETIC/GEOM parked + reversible).
+    Built across 2 sequential-build+adversarial-review workflows: (A) H0-H5 — permanent center divider as a FIRING
+    BOUNDARY (lane_arena.gd; ship roams full width, only damages its near side of CENTER_X=540), ramping fodder
+    both lanes (targets.gd _spawn_horde), 20s lane-boss KIND_LANEBOSS (separate spawn path = boss-exclusion is
+    free), FIREPOWER-AS-HEALTH (breach -> GameState.drain_firepower(streams) drains projectile_count, lose at 0;
+    HUD firepower bar). (B) batch — thin CYAN divider + HOLLOW neon enemies (transparent-core texture; Glitch
+    hot-pink / Rhombus neon-green / Fractal violet via palette ENEMY_*), Debug autoload + pause Debug menu, +/×
+    gates. New autoload/debug.gd (tokens/enemies/gates toggles; density/speed/strength/firepower_loss/enemy_cap
+    steppers, density+cap UNBOUNDED, MultiMesh buffer 1024 so cap pushes past 256; 3 bullet-passthrough
+    placeholders; persists user://debug.cfg; null-safe accessors). Debug knobs wired into the FODDER path only
+    (boss untouched) + firepower_loss in _breach. Gates: data/level_horde.tres +/×-only schedule + gate_spawner
+    _restrict_op; enemies ignore gates in HORDE (_maybe_multiply/hijack suppressed). TWO DEVICE BUGS fixed in the
+    main loop: Debug menu rendered all rows on one line (GDScript lambda captured the Y cursor by value -> instance
+    member + _add_row method; confirmed via tools/shot_debug_menu.gd PNG); firepower bar never moved
+    (_relabel_battery_as_firepower defined but NEVER CALLED in run.gd HORDE setup -> added the call). VALIDATION:
+    the workflow self-checks MISSED 10 stale verifies (session-23 lesson AGAIN) -> ran the full sweep in the main
+    loop, reconciled all 10 (force-LEGACY for parked paths / color-intent updates; a 3rd workflow, all real_bug=none)
+    -> 42/42 PASS + --import clean. SHIPPED build #19 (both testers) — first HORDE build on a device. HORDE epic = #89
+    (code comments say #90, a planning guess); #86/#87/#88 commented superseded/parked/partial.
+  previous_notes: >
     Session 24: SHIPPED build #18 (internal + external/Patrick) — first time the session-23 "feelable"
     combat surface reaches testers — with a build-specific What-to-Test; clean beta_submit (no spaceship
     description-bug). Knocked out the one genuinely headless-doable v0.5.0 task: #37 particle budget WIRING
@@ -22,62 +43,30 @@ last_updated:
     blocker). Documented in CLAUDE.md + memory mini-air-glow-preview. Researched the design workflow
     (Gemini/AI Studio mockup -> Claude spec -> Claude Code impl) + reference repos (PerfBullets/BlastBullets2D,
     godotshaders). All committed this handoff.
-  previous_notes: >
-    Session 23 (ULTRACODE): imported the cloud ultraplan combat-redesign POC (built on Claude-Code-web,
-    no Godot there) via a git BUNDLE pulled over SSH from the MacBook Air -> review branch -> merged main;
-    fixed its one Variant-infer lint + added tools/playtest_poc.gd integration harness. SHIPPED build #17
-    (internal + external/Patrick) — the POC behind the Settings COMBAT (POC) selector (LEGACY/KINETIC/GEOM)
-    — with a BUILD-SPECIFIC "What to Test" (the static-notes problem fixed; memories saved:
-    ship-both-internal-external + testflight-what-to-test). DEVICE FEEDBACK on #17: Walled Gauntlet "feels
-    good, keep it"; NO stance verdict yet (all three need refinement — can't FEEL the difference because
-    enemies/gates too rough); wants "better gate choices + polished enemies". Ran a 4-agent TIGER TEAM
-    (combat-systems / visual-language / arcade-dopamine / mobile-feasibility) on 7 proposed gate concepts ->
-    synthesis + the GATE VISUAL LANGUAGE SYSTEM logged to #86/#88/#87 (bright-ring + dark negative-space
-    core; color+silhouette=FAMILY, glyph=specific, edge/motion=RISK; stance-ghosting; gates avoid the enemy
-    red/magenta band). PLANNED (Opus) then IMPLEMENTED the "make stance comparison FEELABLE" build via a
-    19-agent workflow (serial production code -> parallel verifies -> 4-lens adversarial review -> fix):
-    8 phases — (1) enemy readability (distinct per-archetype hues + Rhombus ENEMY_RHOMBUS_CORE armor tell +
-    punchier flash), (2) gate-effect DISPATCH SEAM (new Events.gate_effect + O(1) Callable table in GameState;
-    math gates via gate_passed untouched), (3) Geom Cache gate (new "fx" formation token), (4) phase-scoped
-    Efficiency (-drain/-burst, resets on phase_changed) + GLOBAL Tungsten (Lance-weight, resets on start_run)
-    through ONE fleet.hit_weight() seam — Tungsten reframed as weight-scaling NOT +1 pierce (bullets are a flat
-    Array[Vector2]), (5) 5-family gate ring-visuals + wrong-stance ghosting, (6) stance pool-filtering
-    (bias-not-drop off-allegiance), (7) STILL_SECS 0.2->0.13. ADVERSARIAL REVIEW caught 8 real bugs (2 blocker
-    verify-crashes; the pool-filter SPRAY-allegiance NO-OP — read GameState.stance right after start_run resets
-    it, now keyed off Settings.poc_mode; Efficiency dropping Lance below the 5.0 armor-crack floor -> split
-    crack_weight() from hit_weight()) — all fixed. VALIDATION (main loop, not trusting the workflow): --import
-    clean + 30/30 headless verifies PASS (+3 new: readability/gate_visual/gate_dispatch) + integration playtest
-    PASS. Code-complete + verified; NOT yet shipped (handoff before ship). Build #17 is the live TestFlight build.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
 # =============================================================================
 focus:
   active_milestone: "v0.5.0 - Complete Game"
-  active_epic: "Combat/gate/stance DEPTH REDESIGN. The 'make the stance comparison FEELABLE' build SHIPPED as build #18 (live TestFlight, both testers). NEW CAPABILITY this session: mini->Air native-bloom preview loop (tools/sync-to-air.sh) — the blind-visual loop is FIXED, so enemy/gate visuals are now iterable locally with real glow. NEXT visual work: #88 enemy SILHOUETTES (root-caused: all archetypes share one soft-diamond mesh + bloom washes hues to white). DEPENDENCY FLIP unchanged: #87 (lock stance) BLOCKED on device feedback for #86+#88. Walled Gauntlet VALIDATED (keep). Device-gated perf cluster #54/#39/#37/#36 under epic #34 still open (all flagged status:blocked)."
-  current_issue: "ENEMY VISUAL DIFFERENTIATION (#88) — now iterable with the new mini->Air glow loop. ROOT CAUSE found: targets.gd renders ALL archetypes as ONE shared soft-DIAMOND quad (assets/obstacles/targets.gd _build_multimesh/_make_diamond_texture), differing only by size + HDR color; additive+bloom washes the per-archetype hues to white, so they read identical at speed. FIX: give each archetype a distinct SILHOUETTE (Glitch cluster / Rhombus plated diamond / Fractal star) on the textured/MultiMesh path + a dark-core/hard-edge so the shape survives bloom (the gate 'color+silhouette=FAMILY, dark-core-vs-bloom' lesson, never applied to enemies). WORKFLOW: Gemini/AI Studio mockup (visual target) -> Claude spec -> Claude Code impl on the mini -> tools/sync-to-air.sh -> Play on the Air to SEE it (real M2 bloom) -> headless-verify the logic. Reference repos: Moonzel/Godot-PerfBullets, nikoladevelops/godot-blast-bullets-2d, godotshaders.com. STILL PENDING (user-gated): device read on build #18 -> LOCK #87 (KINETIC vs GEOM vs hybrid)."
-  next_issue: "After enemy silhouettes read on the Air + device read on #18 / #87 lock: the NEXT build — Overclock Devil's-Bargain gate (rework '1 HP one-shot' -> drain-toward-1 + cancellable + can't self-kill; REUSES the phase-buff seam from session 23; only loss channel = highest blast radius) + per-gate dark-core GLYPHS (near-read layer). PARKED new gate ideas: Avalanche, Ironclad, Phoenix, Threadneedle, Mortgage. CUT (do not revive without cause): Hair-Trigger, Ricochet, Harvester. #85 boss HP-bar layout (premise may be STALE — confirm on device first). Device-gated perf cluster #54/#39/#37/#36 + boss balance (all status:blocked — close on a TestFlight perf pass). #81 twin-stick stays ICEBOX/V2. DONE this session: #35 perf overlay -> bottom-right; #37 budget wiring; build #18 shipped."
+  active_epic: "#89 HORDE mode — twin-lane survival is THE core game (Neon Splice). BUILT + SHIPPED (build #19, both testers): firing-boundary center divider, ramping fodder both lanes + 20s lane-boss, FIREPOWER-AS-HEALTH + +/× recovery gates, HOLLOW neon enemies, pause DEBUG menu (autoload/debug.gd). Mode selector removed; LEGACY/KINETIC/GEOM parked (reversible). OPEN/device-gated: real-iPhone FRAMERATE at the 256 enemy cap (#1 unknown — Patrick's read) + neon readability under bloom + lose/recover tuning. Supersedes #86 (gates -> +/× firepower), #87 (stance parked), #88 (partial — hues done, silhouettes deferred). mini->Air glow loop is the iteration surface; perf cluster #54/#39/#37/#36 under #34 still open (status:blocked)."
+  current_issue: "PATRICK's DEVICE READ on build #19 (HORDE, #89) -> then TUNE. #1 unknown = FRAMERATE with the swarm at MAX_ENEMIES soft-cap 256 on a real iPhone (the batched consume_volumes pass + MultiMesh(1024 buffer) + per-kill token drops all scale) — dial the cap/density DOWN if FPS suffers. Then: readability of the hollow neon enemies under bloom (Glitch hot-pink / Rhombus neon-green / Fractal violet) + the thin cyan divider; and tune the lose/recover loop — DENSITY / SPEED / STRENGTH / FIREPOWER-LOSS / ENEMY-CAP / +-× gate values — ALL live via the pause DEBUG menu (autoload/debug.gd, persisted user://debug.cfg). Iterate on the Air (real M2 bloom) first, confirm on device. The Debug-menu render + firepower-bar bind were DEVICE BUGS fixed this session (lambda-captured-Y / _relabel_battery_as_firepower never called)."
+  next_issue: "After the #19 device read + tuning: per-archetype enemy SILHOUETTES (#88 — all archetypes still share ONE diamond texture; give Glitch/Rhombus/Fractal distinct hollow outlines on the MultiMesh path). Wire the 3 BULLET-PASSTHROUGH placeholders to real behavior (bullets pass through weak enemies by strength). Device-gated perf cluster #54/#39/#37/#36 (closes on a real FPS pass — exactly what the 256-cap horde stresses). Possible cleanup: collapse the parked LEGACY/KINETIC/GEOM modes + their force-LEGACY verifies if HORDE is made permanent. #81 twin-stick stays ICEBOX/V2."
   notes: >
-    Session 24: shipped build #18 (session-23 feelable surface, both testers, build-specific What-to-Test).
-    Did the one headless-doable v0.5.0 task — #37 particle budget WIRING (effect_layer._emit consults
-    ParticleBudget.grant() with per-emitter _emit_amount/_emit_expire_ms live-count + decay; _granted_amount/
-    _active_estimate pure seams; const ParticleBudget=preload + BURST_AMOUNT) + new verify_particles budget asserts.
-    #35 perf_overlay re-anchored BOTTOM-RIGHT (PANEL_MARGIN=(24,140), anchors bottom + right/bottom alignment).
-    Flagged 6 v0.5.0 issues status:blocked (device-gated) with honest comments. ENEMY RENDER DIAGNOSIS (#88):
-    targets.gd _build_multimesh uses ONE QuadMesh + ONE _make_diamond_texture for ALL archetypes — they differ
-    only by size + _enemy_color() HDR hue, and additive+bloom blows the cores white, so they read identical. Fix
-    = distinct silhouettes + dark-core (see current_issue). NEW CAPABILITY: mini->Air glow preview (tools/sync-to-air.sh;
-    Godot 4.7 same build on macbook-air; runs via Metal/M2 with REAL bloom + zero compute-pipeline errors). See
-    CLAUDE.md 'LOCAL GLOW PREVIEW' + memory mini-air-glow-preview. Researched the Gemini->Claude->Code design
-    workflow + reference repos (PerfBullets/BlastBullets2D/godotshaders).
-    SESSION-23 SURFACE (still load-bearing): Events.gate_effect(id,params,at) generalized gate path;
-    GameState._gate_effects Callable table + _on_gate_effect + _fx_geom_cache/_fx_tungsten/_fx_efficiency;
-    phase-scoped geom_drain_mult/burst_damage_mult (reset on phase_changed) + GLOBAL lance_hit_weight_mult (reset in
-    start_run); fleet.hit_weight() (LANCE*lance_hit_weight_mult*burst_damage_mult) + fleet.crack_weight() (LANCE*Tungsten
-    WITHOUT Efficiency, stays >= the 5.0 armor-crack floor); gate.gd Family enum + ring textures + set_ghosted();
-    gate_spawner _stance_pool_filter/_allegiance_for_poc (allegiance from Settings.poc_mode) + "fx" formation token;
-    palette ENEMY_* hues + ENEMY_RHOMBUS_CORE + GATE_FAMILY_*; STILL_SECS=0.13. 30 verifies total; tools/playtest_poc.gd
-    is the integration harness.
+    Session 25: HORDE is the core game (full story in last_updated.notes). NEW SURFACE: autoload/debug.gd
+    (Debug autoload after Settings; persisted user://debug.cfg; null-safe tokens_on/enemies_on/gates_on/
+    density_mult/speed_mult/strength_mult/firepower_loss/cap; Events.debug_changed) + assets/ui/debug_menu.gd
+    (pause-overlay menu; UI.toggle_row/UI.stepper_row in ui_kit). assets/obstacles/lane_arena.gd (permanent
+    divider; firing-boundary side_of/CENTER_X=540). targets.gd: KIND_LANEBOSS + STATS streams; _spawn_horde
+    fodder path (set_horde) reads Debug density/speed/strength/enemy_cap; far-side filter; _make_diamond_texture
+    HOLLOW; MultiMesh buffer 1024; _maybe_multiply/hijack suppressed in HORDE; _breach -> drain_firepower *
+    Debug.firepower_loss. game_state.gd: HORDE_START_FIREPOWER=40, drain_firepower, _load_level -> level_horde.tres.
+    run.gd: LaneArena + set_horde + _relabel_battery_as_firepower (firepower HUD) in HORDE; gates only if
+    Debug.gates_on(). gate_spawner _restrict_op (+/x only). settings.gd: poc_mode FORCED HORDE + COMBAT(POC)
+    selector removed. palette ENEMY_* recolored (Glitch pink / Rhombus green / Fractal violet, all hollow).
+    AIR LOOP (iteration surface): edit on mini -> tools/sync-to-air.sh -> run on Air ~/.local/bin/godot --path
+    ~/Documents/neon-runner res://assets/ui/boot.tscn (real M2 bloom); tools/shot_debug_menu.gd PNG-captures
+    flat UI for layout. The mini renders no bloom/FPS.
     GOTCHAS still in force: a Node add_child()ed during a verify _initialize()
     has _ready DEFERRED under `-s` (await process_frame before asserting); a bare `Events`/`GameState`/`Settings`
     won't compile in the `-s` MAIN tool script (use root.get_node(...)); use runtime load() not top-level const
@@ -85,16 +74,15 @@ focus:
     .get()) is a warning-treated-as-ERROR — type it explicitly; String(Color) is invalid (use str()); root has
     no get_root() (use root directly). Verify result FILES are hardcoded /tmp/verify_<name>_result.txt — pass
     that exact path to run-headless.sh. ALWAYS re-run --import + the verify sweep in the MAIN loop, never trust
-    the workflow's self-checks (the adversarial review's per-agent --import missed 8 bugs incl 2 blocker
-    verify-crashes + a feature no-op).
-    DEPLOY unchanged + proven: bump export_presets version (18->19 next) -> Godot iOS export (exit 1 EXPECTED) ->
+    the workflows' self-checks (this session they MISSED 10 stale verifies + 2 device bugs the headless
+    suite can't see). GDScript LAMBDAS capture locals BY VALUE — a captured running cursor never advances (use
+    an instance member); this caused the Debug-menu all-rows-on-one-line bug.
+    DEPLOY unchanged + proven: bump export_presets version (19->20 next) -> Godot iOS export (exit 1 EXPECTED) ->
     fastlane ios ship (self-unlocks keychain via NEON_KEYCHAIN_PW) -> status until VALID -> beta_submit build:N
     version:0.1.0 for external. ALWAYS set a build-specific What-to-Test (whatsnew:) and ship to BOTH testers.
     Re-ship if a build is invisible >25 min (Apple ingestion stall).
-    DEVICE BACKLOG (iPhone-only): the WHOLE session-23 build (enemy hues / gate family rings / ghosting / Tungsten
-    / Efficiency / 0.13 brake) — does it read at speed under bloom + is the stance comparison feelable (the #87
-    decision); plus session-21 FEEL (stance flips, boss arm/gravity, perk draft, phase crescendo), #76 notch,
-    glow/fonts/real-FPS, the #34 perf cluster (#54/#39/#37/#36), #77.
+    DEVICE BACKLOG (iPhone-only): HORDE build #19 — FRAMERATE at the 256 cap (the gate), neon readability under
+    bloom, lose/recover feel; plus glow/fonts/real-FPS, the #34 perf cluster (#54/#39/#37/#36), #76 notch, #77.
     OPS: rotate the keychain password; remove Xcode-16.4.0.app (rollback condition long met).
 
 # =============================================================================

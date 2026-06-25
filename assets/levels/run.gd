@@ -58,6 +58,9 @@ const VIEWPORT_CULL_SCRIPT := preload("res://assets/levels/viewport_cull.gd")
 # Walled Gauntlet lane-commitment obstacle. Preloaded by PATH (headless parse rule, as above).
 const STANCE_CONTROLLER_SCRIPT := preload("res://assets/player/stance_controller.gd")
 const WALLED_GAUNTLET_SCRIPT := preload("res://assets/obstacles/walled_gauntlet.gd")
+# HORDE (#90, H1): the PERMANENT centre divider — the firing boundary. Instanced ONLY in HORDE;
+# the transient Walled Gauntlet is SKIPPED in HORDE (the geometry is made permanent here instead).
+const LANE_ARENA_SCRIPT := preload("res://assets/obstacles/lane_arena.gd")
 
 var _player: Node2D
 var _fleet: Node2D
@@ -99,6 +102,8 @@ var _phase_director: Node
 # #86/#87 combat POCs.
 var _stance_controller: Node
 var _gauntlet: Node2D
+# HORDE (#90, H1): the permanent centre divider, instanced only when poc_mode == HORDE.
+var _arena: Node2D
 # #87 GEOM_OVERDRIVE bloom spike: the env glow values to relax back to after an overdrive burn ends.
 var _overdrive_tween: Tween
 var _perf: CanvasLayer
@@ -248,19 +253,37 @@ func _ready() -> void:
 	_stance_controller.name = "StanceController"
 	add_child(_stance_controller)
 	_stance_controller.set_player(_player)
-	# Walled Gauntlet: the lane-commitment obstacle. A world sibling added after Targets + Gates so it
-	# can inject occupants (Targets.spawn_add) + lane gates (GateSpawner.spawn_split); it clamps the
-	# ship via the bus (Events.lane_clamp_changed). One gauntlet fires per run at its authored start_m.
-	_gauntlet = WALLED_GAUNTLET_SCRIPT.new()
-	_gauntlet.name = "WalledGauntlet"
-	add_child(_gauntlet)
-	_gauntlet.set_targets(_targets)
-	_gauntlet.set_gates(_gates)
-	_gauntlet.set_ship_line(ship_pos.y)
+	# HORDE (#90, H1) makes the divider GEOMETRY permanent instead of a transient trap: in HORDE we
+	# instance the static full-height LaneArena and SKIP the scrolling Walled Gauntlet entirely. The
+	# ship is NOT lane-clamped in HORDE (it steers the full width); the arena is purely the firing
+	# boundary (Targets enforces the far-side filter). LEGACY/KINETIC/GEOM keep the transient gauntlet
+	# unchanged (byte-for-byte) — they never see the arena.
+	if Settings.poc_mode == Settings.PocMode.HORDE:
+		_arena = LANE_ARENA_SCRIPT.new()
+		_arena.name = "LaneArena"
+		add_child(_arena)
+		# HORDE (#90, H2): arm the continuous fodder spawner. Targets now feeds a ramping KIND_GLITCH
+		# horde into both half-fields on top of (or instead of) the authored waves — the core HORDE loop.
+		_targets.set_horde(true)
+	else:
+		# Walled Gauntlet: the lane-commitment obstacle. A world sibling added after Targets + Gates so
+		# it can inject occupants (Targets.spawn_add) + lane gates (GateSpawner.spawn_split); it clamps
+		# the ship via the bus (Events.lane_clamp_changed). One gauntlet fires per run at its start_m.
+		_gauntlet = WALLED_GAUNTLET_SCRIPT.new()
+		_gauntlet.name = "WalledGauntlet"
+		add_child(_gauntlet)
+		_gauntlet.set_targets(_targets)
+		_gauntlet.set_gates(_gates)
+		_gauntlet.set_ship_line(ship_pos.y)
 	# #87 GEOM_OVERDRIVE: spike the bloom (and trauma) on the LANCE smart-bomb burn, relax on exit.
 	Events.overdrive_changed.connect(_on_overdrive_changed)
 
 	_build_hud()
+	# HORDE (#90, H3): bind the FIREPOWER bar — repurpose the (otherwise inert) battery strip and connect
+	# it to projectile_count so breaches visibly drain it (and gates refill it). This was defined but never
+	# called, so the bar sat static while firepower silently bled underneath — the "reduction not working" bug.
+	if Settings.poc_mode == Settings.PocMode.HORDE:
+		_relabel_battery_as_firepower()
 	# Run no longer reacts to the run terminals — SceneManager listens for run_completed /
 	# grid_collapsed and swaps to the Results screen (#44), freeing this scene.
 	Events.player_steered.connect(_on_player_steered)
@@ -274,13 +297,21 @@ func _ready() -> void:
 	Events.boss_phase_changed.connect(_on_boss_phase_changed)  # #82/#83 phase telegraph + action prompt
 	Events.stance_changed.connect(_on_stance_changed)      # #79 persistent stance indicator
 	Events.geom_changed.connect(_on_geom_changed)          # #87 GEOM_OVERDRIVE charge gauge
+	Events.lane_boss_spawned.connect(_on_lane_boss_spawned)  # #90 H4 HORDE 20-s lane-boss INCOMING telegraph
 
 	GameState.start_run()
 	# The level owns the segment schedule (#13): hand the gate formations + enemy waves
 	# to their systems now that the level has loaded. Both stream by track_m on the
 	# shared TrackView projection; the finish sits at the very end of the track.
 	var level: Resource = GameState.active_level
-	_gates.build_formations(level.gate_formations)
+	# HORDE (#90, P5): the +/× firepower-recovery gates are designer-toggleable — build them only when
+	# Debug.gates_on() (default ON). gates_off → an EMPTY schedule, so the survival run runs with no gates.
+	# LEGACY/KINETIC/GEOM always build the authored schedule (the Debug toggle is a HORDE-only knob), so
+	# they stay byte-for-byte unchanged.
+	if Settings.poc_mode == Settings.PocMode.HORDE and not _gates_enabled():
+		_gates.build_formations([])
+	else:
+		_gates.build_formations(level.gate_formations)
 	_targets.set_schedule(level.enemy_waves)
 	_finish_line.setup(level.length_m, ship_pos.y)
 
@@ -312,7 +343,12 @@ func _process(delta: float) -> void:
 	# arrival. The decisive guard is now LevelDef.has_boss in tick_run, which never auto-completes a
 	# boss level; arming here ensures the boss is live as the track ends.) The boss self-steps via its
 	# own _process once in the tree — we do NOT call step() here. We only DRAIN its queued adds.
-	if not _boss_armed and GameState.run_active and _progress >= BOSS_ARM_PROGRESS:
+	# HORDE (#90, H5) has NO end boss — the WIN is "survive to the finish". Skipping the arm block keeps
+	# GameState.boss_active false so tick_run AUTO-COMPLETES at length_m (its decisive guard is the
+	# level's has_boss=false, but arming here would set boss_active true and block that completion). The
+	# other POCs are byte-for-byte unchanged (this guard is false for LEGACY/KINETIC/GEOM).
+	if not _boss_armed and GameState.run_active and _progress >= BOSS_ARM_PROGRESS \
+			and Settings.poc_mode != Settings.PocMode.HORDE:
 		_boss_armed = true
 		GameState.boss_active = true
 		_boss.arm()
@@ -413,6 +449,16 @@ func _on_player_steered(x: float, _x_norm: float) -> void:
 		_fleet.position.x = _steer_x + _boss_gravity_dx
 
 
+## HORDE (#90, P5) null-safe read of Debug.gates_on() (designer gate toggle, default ON). Mirrors the
+## Targets/_debug_node pattern: if the Debug autoload isn't present (a bare verify), default to ON so the
+## gates still build. Keeps run.gd free of a hard `Debug.` dependency that would break headless parse.
+func _gates_enabled() -> bool:
+	var dbg: Node = get_tree().root.get_node_or_null("Debug")
+	if dbg != null and dbg.has_method("gates_on"):
+		return bool(dbg.call("gates_on"))
+	return true
+
+
 func _on_distance_changed(distance: float, progress: float) -> void:
 	_distance = distance
 	_progress = progress
@@ -505,12 +551,59 @@ func _on_geom_changed(value: float, max_value: float) -> void:
 	_geom_fill.size.x = 360.0 * frac
 
 
+## #90 H4: a HORDE 20-s LANE-BOSS spawned on one side of the firing divider — fire an "INCOMING"
+## telegraph. Reuses the existing screen-flash (FeedbackManager) + screen-shake bus the boss/breach
+## beats already use: a red flash punch + a sharp trauma jolt so the heavy threat reads on arrival.
+## `side` (0 LEFT / 1 RIGHT) is available for a future side-specific cue; the flash/shake are global.
+## Guard-safe headless: trigger_screen_flash/shake have no consumer in a bare verify, so this no-ops
+## visually while still being a pure signal handler (the verify asserts the SPAWN, not the flash).
+func _on_lane_boss_spawned(_side: int, _at: Vector2) -> void:
+	Events.trigger_screen_flash.emit(Palette.GATE_NEGATIVE, 0.35)
+	Events.trigger_screen_shake.emit(0.45, 0.35)
+
+
 func _on_battery_changed(value: float, max_value: float) -> void:
 	if _battery_fill == null:
+		return
+	# HORDE (#90, H3): the strip is the FIREPOWER bar (driven by _on_firepower_changed), and the Glow
+	# Battery is inert — ignore its (full, static) updates so they can't clobber the firepower readout.
+	if Settings.poc_mode == Settings.PocMode.HORDE:
 		return
 	var frac: float = clampf(value / max_value, 0.0, 1.0)
 	_battery_fill.size.x = BATTERY_BAR.x * frac
 	_battery_fill.color = Palette.BATTERY_LOW_HUD.lerp(Palette.BATTERY_HIGH_HUD, frac)
+
+
+## HORDE (#90, H3): relabel/recolour the (otherwise-inert) Glow Battery strip as the FIREPOWER bar and
+## bind it to projectile_count via _on_firepower_changed. Recolours the fill gold, drops a "FIREPOWER"
+## caption above it, and seeds the fill to the start firepower so the bar reads correct from frame one.
+## Only called in HORDE; LEGACY/KINETIC/GEOM keep the green battery bar untouched.
+func _relabel_battery_as_firepower() -> void:
+	if _battery_fill != null:
+		_battery_fill.color = Palette.MENU_GOLD_HUD
+	# Caption it FIREPOWER (the battery bar shows no label in the other modes). Parent it to the same HUD
+	# layer the strip lives in so it shares the safe-area offset; positioned just under the strip.
+	var layer: Node = _battery_fill.get_parent() if _battery_fill != null else null
+	if layer != null:
+		var cap := UI.text("FIREPOWER", Fonts.arcade, 22, Palette.MENU_GOLD_HUD, HORIZONTAL_ALIGNMENT_CENTER)
+		cap.size.x = UI.DESIGN.x
+		cap.position = Vector2(0.0, BATTERY_TOP + BATTERY_BAR.y + 2.0 + _safe_top_inset())
+		layer.add_child(cap)
+	# Bind to the firepower economy: projectile_count_changed redraws the bar as a fraction of the start
+	# firepower (the death threshold is 0). Seed once now so the bar is correct before the first breach.
+	Events.projectile_count_changed.connect(_on_firepower_changed)
+	_on_firepower_changed(GameState.projectile_count)
+
+
+## HORDE (#90, H3): FIREPOWER bar fill — projectile_count as a fraction of HORDE_START_FIREPOWER. Bound
+## ONLY in HORDE (via _relabel_battery_as_firepower); the swarm shrinks on a breach (drain_firepower) and
+## empties the bar at the death threshold (0). Recolours gold→red as the firepower bleeds toward death.
+func _on_firepower_changed(count: int) -> void:
+	if _battery_fill == null:
+		return
+	var frac: float = clampf(float(count) / float(GameState.HORDE_START_FIREPOWER), 0.0, 1.0)
+	_battery_fill.size.x = BATTERY_BAR.x * frac
+	_battery_fill.color = Palette.BATTERY_LOW_HUD.lerp(Palette.MENU_GOLD_HUD, frac)
 
 
 ## #26 combo visual feedback. GameState owns the combo count (it emits combo_updated from
@@ -620,10 +713,16 @@ func _build_hud() -> void:
 	# #79 STANCE indicator — visible the WHOLE run (the core readability the #79 design needs, not
 	# just a boss thing). Centred under the battery strip; recoloured + relabelled by stance_changed.
 	# SPRAY = warm gold (wide/light), LANCE = cool cyan (narrow/heavy). Seeded to the run start (SPRAY).
-	_stance_label = UI.text("SPRAY", Fonts.arcade, 30, Palette.MENU_GOLD_HUD, HORIZONTAL_ALIGNMENT_CENTER)
-	_stance_label.size.x = UI.DESIGN.x
-	_stance_label.position = Vector2(0.0, BATTERY_TOP + 24.0 + top)
-	layer.add_child(_stance_label)
+	# HORDE (#90): SUPPRESSED — HORDE is SPRAY-only by design (its +/× recovery gates don't drive the
+	# stance: the gate→LANCE coupling is LEGACY-only and only −/÷ flips it, so the label would read
+	# SPRAY for the whole run) AND it would stack under the FIREPOWER caption that replaces
+	# the battery strip in this band. The _on_stance_changed handler null-guards _stance_label, so
+	# leaving it null here is safe. (See _relabel_battery_as_firepower for the FIREPOWER caption.)
+	if Settings.poc_mode != Settings.PocMode.HORDE:
+		_stance_label = UI.text("SPRAY", Fonts.arcade, 30, Palette.MENU_GOLD_HUD, HORIZONTAL_ALIGNMENT_CENTER)
+		_stance_label.size.x = UI.DESIGN.x
+		_stance_label.position = Vector2(0.0, BATTERY_TOP + 24.0 + top)
+		layer.add_child(_stance_label)
 
 	# #87 GEOM_OVERDRIVE charge gauge — a thin centred bar under the stance label. Fills from kills
 	# (GameState.add_geom) and drains on the LANCE smart-bomb burn; a triple-tap with charge in the
@@ -652,6 +751,13 @@ func _build_hud() -> void:
 	_pause = PAUSE_SCRIPT.new()
 	_pause.name = "Pause"
 	add_child(_pause)
+
+	# HORDE (#90, H3): FIREPOWER-AS-HEALTH. Repurpose the Glow Battery strip as the FIREPOWER readout —
+	# relabel/recolour it gold and bind it to projectile_count / HORDE_START_FIREPOWER (see
+	# _on_firepower_changed). The Glow Battery is inert in HORDE, so the bar would otherwise sit full and
+	# meaningless; here it shrinks as breaches eat the swarm and empties at the death threshold.
+	if Settings.poc_mode == Settings.PocMode.HORDE:
+		_relabel_battery_as_firepower()
 
 
 ## #82/#83 boss HUD: a name + HP bar + an ACTION PROMPT, parked across the top of the playfield (under

@@ -114,9 +114,14 @@ func build_formations(specs: Array) -> void:
 	# KINETIC/LEGACY -> SPRAY), which is the single allegiance every gate is classified against.
 	_run_allegiance = _allegiance_for_poc(int(Settings.poc_mode))
 	_off_allegiance_seen = 0
+	# HORDE (#90, P5): gates are a PLAYER firepower mechanic, +/× ONLY. _restrict_op clamps any
+	# non-add/non-mul op (sub/div, or a stray edit) to ADD so a mis-authored HORDE schedule can never
+	# DRAIN the firepower bar — recovery-only by construction. No-op for LEGACY/KINETIC/GEOM (which
+	# legitimately use −/÷), so those formations stay byte-for-byte unchanged.
+	var horde: bool = _is_horde()
 	for s in specs:
-		var l: Array = s["l"]
-		var r: Array = s["r"]
+		var l: Array = _restrict_op(s["l"]) if horde else (s["l"] as Array)
+		var r: Array = _restrict_op(s["r"]) if horde else (s["r"] as Array)
 		var left: Node2D = GATE.new()
 		left.name = "GateL_%d" % int(s["m"])
 		_configure_side(left, l, 0.0, LANE_SPLIT, LEFT_CENTER)
@@ -205,6 +210,34 @@ func _configure_side(gate: Node2D, side: Array, smin: float, smax: float, center
 		gate.position.x = center_x
 	else:
 		gate.configure(GATE.op_from_string(side[0]), float(side[1]), smin, smax, center_x)
+
+
+## HORDE (#90, P5) defensive op clamp. Gates in HORDE are a PLAYER firepower mechanic — +/× ONLY, no
+## subtract/divide. Any non-add/non-mul math op (a stray "sub"/"div", or a mis-edited .tres) is forced
+## to "add" so a HORDE gate can never DRAIN the firepower bar; an "fx" effect side passes through
+## untouched (effect gates carry no math op). Returns a NEW side array (never mutates the caller's spec).
+func _restrict_op(side: Array) -> Array:
+	if side.is_empty():
+		return side
+	var op: String = String(side[0])
+	if op == "fx" or op == "add" or op == "mul" or op == "multiply":
+		return side
+	# sub/div/subtract/divide/anything-unknown -> clamp to ADD, keep the authored magnitude.
+	var clamped: Array = side.duplicate()
+	clamped[0] = "add"
+	return clamped
+
+
+## HORDE active? Reads the live Settings.poc_mode (PocMode.HORDE == 3) via the autoload tree, mirroring
+## Targets._is_horde so a bare-instance verify (no Settings autoload) safely reports false. Used to gate
+## the +/×-only op restriction so only HORDE formations are clamped; the other POCs keep −/÷ as authored.
+func _is_horde() -> bool:
+	var loop := Engine.get_main_loop()
+	if loop is SceneTree:
+		var s: Node = (loop as SceneTree).root.get_node_or_null("Settings")
+		if s != null:
+			return int(s.get("poc_mode")) == 3   # Settings.PocMode.HORDE
+	return false
 
 
 ## APPEND one ad-hoc Split Choice formation mid-run (#86 Walled Gauntlet lane gates), WITHOUT

@@ -26,10 +26,24 @@ extends Node2D
 ## costs you, closing the combat loop. Kills score through GameState.register_kill
 ## (combo multiplier). Sim is in step() so it runs/asserts headless with no GPU.
 
-enum { KIND_GLITCH, KIND_RHOMBUS, KIND_FRACTAL, KIND_FRACTLING }
+## KIND_LANEBOSS (#90, H4) is the HORDE 20-s LANE-BOSS: a heavy single enemy that spawns on an
+## ALTERNATING side of the firing divider every LANEBOSS_INTERVAL. It rides the EXISTING MultiMesh /
+## consume_volumes / _apply_damage / _kill path (no new collision/render code) — it's just a fat,
+## unarmored, high-point archetype with a moderate breach cost. Beatable now: a representative SPRAY
+## DPS clears its ~600 hp inside a bounded time (the verify asserts this). Appended LAST so the existing
+## enum ordinals (GLITCH=0…FRACTLING=3) are byte-for-byte unchanged — no other archetype shifts.
+enum { KIND_GLITCH, KIND_RHOMBUS, KIND_FRACTAL, KIND_FRACTLING, KIND_LANEBOSS }
 
-const MAX_ENEMIES := 48
+## MAX_ENEMIES raised 48 -> 128 for HORDE (#90, H2): the continuous fodder spawner sustains a
+## far denser live set than the authored waves ever did. The MultiMesh instance_count tracks this
+## (MAX_ENEMIES + MAX_BURSTS) so the render path can show the full cap. LEGACY/KINETIC/GEOM never
+## approach the old 48 with the sparse authored schedule, so the higher cap is inert for them.
+const MAX_ENEMIES := 128
 const MAX_BURSTS := 24
+## P3: the GENEROUS HARD MultiMesh enemy buffer, sized once at build. MAX_ENEMIES is only the LEGACY
+## fodder default; the live HORDE soft cap is Debug.enemy_cap (UNBOUNDED, default 256), so the render
+## buffer must comfortably exceed 256 to let the designer push toward the perf wall without rebuilding.
+const MMI_HARD_MAX := 1024
 const DIAMOND_TEX_SIZE := 48
 const BASE_QUAD := 96.0             # MultiMesh quad size; per-instance scaled by size
 
@@ -69,11 +83,17 @@ const MULTIPLY_BAND := 80.0
 
 ## Per-archetype stat block. Looked up by kind; enemies carry a copy so test code can
 ## still inject bare dicts (they default to GLITCH behaviour via the get() fallbacks).
+## `streams` (#90, H3) is the FIREPOWER cost a breach inflicts in HORDE, where projectile_count IS the
+## loss channel: a breaching enemy removes this many streams of swarm volume (GameState.drain_firepower)
+## and you die at 0. GLITCH fodder costs 1; the tougher archetypes cost proportionally more. Inert
+## outside HORDE — there a breach drains the Glow Battery by `breach` as before (the `breach` field is
+## untouched, so LEGACY/KINETIC/GEOM are byte-for-byte unchanged).
 const STATS := {
-	KIND_GLITCH:    {"hp": 40.0,  "size": 52.0,  "spd": [220.0, 320.0], "armor": 0, "points": 50,  "breach": 6.0,  "split": false},
-	KIND_RHOMBUS:   {"hp": 320.0, "size": 108.0, "spd": [70.0, 120.0],  "armor": 3, "points": 250, "breach": 18.0, "split": false},
-	KIND_FRACTAL:   {"hp": 110.0, "size": 78.0,  "spd": [130.0, 200.0], "armor": 0, "points": 120, "breach": 10.0, "split": true},
-	KIND_FRACTLING: {"hp": 28.0,  "size": 42.0,  "spd": [280.0, 380.0], "armor": 0, "points": 40,  "breach": 4.0,  "split": false},
+	KIND_GLITCH:    {"hp": 40.0,  "size": 52.0,  "spd": [220.0, 320.0], "armor": 0, "points": 50,  "breach": 6.0,  "split": false, "streams": 1},
+	KIND_RHOMBUS:   {"hp": 320.0, "size": 108.0, "spd": [70.0, 120.0],  "armor": 3, "points": 250, "breach": 18.0, "split": false, "streams": 6},
+	KIND_FRACTAL:   {"hp": 110.0, "size": 78.0,  "spd": [130.0, 200.0], "armor": 0, "points": 120, "breach": 10.0, "split": true,  "streams": 3},
+	KIND_FRACTLING: {"hp": 28.0,  "size": 42.0,  "spd": [280.0, 380.0], "armor": 0, "points": 40,  "breach": 4.0,  "split": false, "streams": 1},
+	KIND_LANEBOSS:  {"hp": 600.0, "size": 150.0, "spd": [90.0, 110.0],  "armor": 0, "points": 1000, "breach": 24.0, "split": false, "streams": 10},
 }
 
 # Per-archetype HDR colour now lives in Palette (Entropy faction = hot rose #ff007f).
@@ -91,6 +111,34 @@ var _rng := RandomNumberGenerator.new()
 var _mmi: MultiMeshInstance2D
 var kills: int = 0
 var breaches: int = 0               # enemies that reached the ship line (debug/verify)
+
+# --- HORDE continuous spawner (#90, H2) -------------------------------------
+## True only in HORDE: the field is fed by a CONTINUOUS ramping fodder spawner (KIND_GLITCH) instead
+## of (only) the authored waves. Run flips this on via set_horde(true) when poc_mode == HORDE. The
+## authored-wave path (_spawn_due_waves) still runs underneath, harmless if the level has no waves.
+var _horde_active: bool = false
+## Fractional-spawn accumulator: _horde_rate() enemies/sec accrue here; whole units spawn, the
+## fraction carries to the next frame so a sub-1/frame rate still spawns smoothly over time.
+var _horde_accum: float = 0.0
+## HORDE fodder spawn rate ramp (enemies/sec): lerps from MIN at run start to MAX at the finish so
+## the pressure climbs across the (finite) run. Scaled by Difficulty.spawn_density_mult when present.
+const HORDE_RATE_MIN := 2.0
+const HORDE_RATE_MAX := 8.0
+## Keep HORDE fodder clear of the centre divider (firing boundary) by this margin, and inside the
+## screen edges by WAVE_EDGE_MARGIN, so every spawn lands cleanly in the LEFT or RIGHT half-field.
+const HORDE_CENTER_GAP := 60.0
+
+# --- HORDE 20-s LANE-BOSS (#90, H4) ------------------------------------------
+## Every LANEBOSS_INTERVAL of HORDE step() time, ONE KIND_LANEBOSS spawns on an ALTERNATING side of
+## the firing divider (left, then right, then left…) at that lane's centre-x, and Events.lane_boss_spawned
+## is emitted so run.gd can telegraph it. The accumulator advances only while HORDE is active AND the
+## run is live, so paused/non-HORDE time never advances it. Inert outside HORDE (LEGACY/KINETIC/GEOM
+## never set_horde(true), and the step() gate also checks _is_horde()).
+const LANEBOSS_INTERVAL := 20.0
+var _boss_accum: float = 0.0
+## Which side the NEXT lane-boss spawns on: starts LEFT (0), flips each spawn so bosses alternate
+## sides across the run. Reset by set_horde so each run begins on the LEFT.
+var _boss_next_side: int = 0
 
 
 func _ready() -> void:
@@ -125,6 +173,16 @@ func set_breach_line(y: float) -> void:
 ## The spawner never holds a reference back. Null-safe — unset in unit tests.
 func set_gates(gates: Node2D) -> void:
 	_gates = gates
+
+
+## Arm/disarm the HORDE continuous fodder spawner (#90, H2). Run calls set_horde(true) only when
+## poc_mode == HORDE; LEGACY/KINETIC/GEOM never call it, so _spawn_horde is fully inert for them
+## (the step() gate also short-circuits on it). Resets the accumulator so each run starts clean.
+func set_horde(active: bool) -> void:
+	_horde_active = active
+	_horde_accum = 0.0
+	_boss_accum = 0.0
+	_boss_next_side = 0   # first lane-boss of the run spawns on the LEFT, then alternates
 
 
 ## Install the level's enemy-wave schedule (#13). Each wave is duplicated and tagged
@@ -213,6 +271,142 @@ func _wave_x(w: Dictionary, i: int, count: int) -> float:
 	return lerpf(WAVE_EDGE_MARGIN, _design.x - WAVE_EDGE_MARGIN, float(i) / float(count - 1))
 
 
+## HORDE continuous fodder spawn (#90, H2). No-op unless armed (set_horde) AND the run is active. Each
+## frame accrues _horde_rate()*delta enemies into _horde_accum; whole units spawn this frame (the
+## fraction carries) as KIND_GLITCH one-hit fodder at a RANDOM lane x clustered in the LEFT or RIGHT
+## half-field (clear of CENTER_X). Respects MAX_ENEMIES — once the field is full we stop draining the
+## accumulator (cap it at 1) so it doesn't build a huge backlog that floods the instant room frees.
+func _spawn_horde(delta: float) -> void:
+	if not _horde_active or not GameState.run_active:
+		return
+	# P3 designer knob: Enemies:Off suppresses the FODDER spawner only (the lane-boss path
+	# _step_laneboss/_spawn_laneboss is intentionally NOT gated, so a boss still arrives).
+	var dbg: Node = _debug_node()
+	if dbg != null and dbg.has_method("enemies_on") and not bool(dbg.call("enemies_on")):
+		return
+	# Soft spawn cap (Debug.enemy_cap, UNBOUNDED) supersedes the MAX_ENEMIES const here so the
+	# designer can push past 256 toward the perf wall (the MultiMesh HARD buffer is the real ceiling).
+	var soft_cap: int = _enemy_soft_cap()
+	_horde_accum += _horde_rate() * delta
+	while _horde_accum >= 1.0:
+		if _enemies.size() >= soft_cap:
+			_horde_accum = minf(_horde_accum, 1.0)   # field full — hold (don't backlog)
+			return
+		_horde_accum -= 1.0
+		_enemies.append(_new_horde_fodder())
+
+
+## The live FODDER spawn cap. Defaults to MAX_ENEMIES; Debug.enemy_cap() overrides it when the
+## autoload is present (UNBOUNDED — the designer can exceed 256). Null-safe for bare verifies.
+func _enemy_soft_cap() -> int:
+	var dbg: Node = _debug_node()
+	if dbg != null and dbg.has_method("cap"):
+		return int(dbg.call("cap"))
+	return MAX_ENEMIES
+
+
+## The fodder spawn rate (enemies/sec) for THIS frame: lerps HORDE_RATE_MIN -> HORDE_RATE_MAX across
+## run progress (distance / level length), so the swarm thickens as the finite run advances. Scaled by
+## Difficulty.spawn_density_mult when that autoload is present (a harder mode spawns denser). Pure +
+## null-safe (a bare unit-test Targets with no Difficulty / no active_level falls back to MIN at p=0).
+func _horde_rate() -> float:
+	var base: float = lerpf(HORDE_RATE_MIN, HORDE_RATE_MAX, _run_progress())
+	var diff: Node = _difficulty_node()
+	if diff != null and diff.has_method("spawn_density_mult"):
+		base *= float(diff.call("spawn_density_mult"))
+	# P3 designer knob: density multiplier (NEUTRAL 1.0 = no change). Null-safe.
+	var dbg: Node = _debug_node()
+	if dbg != null and dbg.has_method("density_mult"):
+		base *= float(dbg.call("density_mult"))
+	return base
+
+
+## Run progress 0..1 (distance / level length). Null-safe: 0.0 when there's no active level (the
+## bare-instance verify drives step() directly without start_run, so it stays at MIN unless it
+## injects a level) — the verify forces the ramp by faking distance via the active level instead.
+func _run_progress() -> float:
+	var lvl: Resource = GameState.active_level
+	if lvl == null:
+		return 0.0
+	var length: float = float(lvl.get("length_m")) if lvl.get("length_m") != null else 0.0
+	if length <= 0.0:
+		return 0.0
+	return clampf(GameState.distance / length, 0.0, 1.0)
+
+
+## A single HORDE fodder enemy (#90, H2): KIND_GLITCH one-hit fodder entering from above the top, at a
+## random x clustered into the LEFT or RIGHT half-field (a coin-flip), kept clear of CENTER_X by
+## HORDE_CENTER_GAP and inside the screen by WAVE_EDGE_MARGIN. Both halves are reachable so the field
+## fills on both sides of the firing boundary (the verify asserts enemies appear in BOTH halves).
+func _new_horde_fodder() -> Dictionary:
+	var e: Dictionary = _new_enemy(KIND_GLITCH, -float(STATS[KIND_GLITCH]["size"]))
+	var left: bool = _rng.randf() < 0.5
+	var x: float
+	if left:
+		x = _rng.randf_range(WAVE_EDGE_MARGIN, HORDE_CENTER_X - HORDE_CENTER_GAP)
+	else:
+		x = _rng.randf_range(HORDE_CENTER_X + HORDE_CENTER_GAP, _design.x - WAVE_EDGE_MARGIN)
+	var p: Vector2 = e["pos"]
+	p.x = x
+	e["pos"] = p
+	# P3 designer knobs (FODDER ONLY — the lane-boss path never routes through here): scale this
+	# enemy's march speed and its hp/max_hp. Both NEUTRAL at 1.0 (byte-identical to today). Null-safe.
+	var dbg: Node = _debug_node()
+	if dbg != null:
+		if dbg.has_method("speed_mult"):
+			e["speed"] = float(e["speed"]) * float(dbg.call("speed_mult"))
+		if dbg.has_method("strength_mult"):
+			var sm: float = float(dbg.call("strength_mult"))
+			e["hp"] = float(e["hp"]) * sm
+			e["max_hp"] = float(e["max_hp"]) * sm
+	return e
+
+
+## HORDE 20-s LANE-BOSS timer (#90, H4). No-op unless HORDE is armed AND the run is active. Accrues
+## step() time into _boss_accum; each whole LANEBOSS_INTERVAL spawns ONE KIND_LANEBOSS via
+## _spawn_laneboss (carrying the fraction to the next frame, like the fodder accumulator), so a single
+## frame can only ever spawn one (a frame ≪ 20 s). Inert for LEGACY/KINETIC/GEOM (gated on _is_horde +
+## _horde_active so neither the live Settings path nor a forced-horde verify advances it off-mode).
+func _step_laneboss(delta: float) -> void:
+	if not _horde_active or not GameState.run_active or not _is_horde():
+		return
+	_boss_accum += delta
+	while _boss_accum >= LANEBOSS_INTERVAL:
+		_boss_accum -= LANEBOSS_INTERVAL
+		_spawn_laneboss()
+
+
+## Spawn ONE KIND_LANEBOSS at the next (alternating) lane's centre-x and emit lane_boss_spawned (#90,
+## H4). The side flips each call so bosses alternate LEFT/RIGHT across the run. No-op once the field is
+## full (a long run can't overflow the cap), but the side STILL flips so the alternation isn't desynced
+## by a skipped spawn. It enters from above the top like a wave enemy and rides the existing
+## MultiMesh/consume_volumes/_apply_damage/_kill path — no new collision or render code.
+func _spawn_laneboss() -> void:
+	var side: int = _boss_next_side
+	_boss_next_side = 1 - _boss_next_side          # alternate even if we can't spawn this time
+	# Boss is HORDE-only, so gate on the live SOFT cap (Debug.enemy_cap, UNBOUNDED, default 256) — not
+	# the LEGACY MAX_ENEMIES const — so a dialed-up fodder field can't intermittently starve the boss.
+	if _enemies.size() >= _enemy_soft_cap():
+		return
+	var e: Dictionary = _new_enemy(KIND_LANEBOSS, -float(STATS[KIND_LANEBOSS]["size"]))
+	var p: Vector2 = e["pos"]
+	p.x = _laneboss_x(side)
+	e["pos"] = p
+	_enemies.append(e)
+	Events.lane_boss_spawned.emit(side, p)
+
+
+## Centre-x of a divider side's half-field (0 LEFT / 1 RIGHT) for a lane-boss spawn: the midpoint of
+## the playable span between the screen edge margin and the divider gap, so the boss lands cleanly in
+## that half (never on CENTER_X). Pure — mirrors LaneArena's lane geometry without reaching for a node.
+func _laneboss_x(side: int) -> float:
+	var inner: float = HORDE_CENTER_X - HORDE_CENTER_GAP
+	var outer: float = HORDE_CENTER_X + HORDE_CENTER_GAP
+	if side == 0:
+		return (WAVE_EDGE_MARGIN + inner) * 0.5                       # LEFT half centre
+	return (outer + (_design.x - WAVE_EDGE_MARGIN)) * 0.5             # RIGHT half centre
+
+
 func _kind_from_string(s: String) -> int:
 	match s:
 		"glitch": return KIND_GLITCH
@@ -231,19 +425,44 @@ func _kind_from_string(s: String) -> int:
 func step(delta: float) -> void:
 	# (0) Scheduled spawns (#13). No-op without a schedule or while the run is inactive.
 	_spawn_due_waves()
+	# (0a) HORDE continuous fodder (#90, H2). Only fires when set_horde(true) was called (HORDE mode)
+	# and the run is active; ramps a fodder rate and spawns KIND_GLITCH into the half-fields. Inert
+	# (early-returns) for LEGACY/KINETIC/GEOM, so their spawning is byte-for-byte unchanged.
+	_spawn_horde(delta)
+	# (0a2) HORDE 20-s LANE-BOSS (#90, H4). Only fires in HORDE while the run is active: a timer accrues
+	# step() time and every LANEBOSS_INTERVAL spawns ONE KIND_LANEBOSS on the next (alternating) side.
+	# Inert (early-returns) for LEGACY/KINETIC/GEOM, so their behaviour is byte-for-byte unchanged.
+	_step_laneboss(delta)
 	# (0b) Park occupants on any newly-hijacked gates (#53). No-op without a gate system.
-	if _gates != null:
+	# HORDE (#90, P5): gates are PLAYER-only — enemies must NEVER hijack/occupy a gate. The HORDE schedule
+	# authors no "hijack" sides, but suppress the park path here too so a stray pending hijack can never
+	# spawn an occupant on a firepower-recovery gate. LEGACY/KINETIC/GEOM keep the #53 hijack intact.
+	if _gates != null and not _is_horde():
 		for h in _gates.call("take_pending_hijacks"):
 			_spawn_hijacker(h)
 
 	# (1) Batched projectile→enemy damage (#54). One pass over the bullets for ALL
 	# enemies instead of one survivor-rebuild per enemy.
+	#
+	# HORDE far-side FILTER (#90, H1): the centre divider is a firing boundary — the fleet only
+	# DAMAGES enemies on the SAME side of CENTER_X as the muzzle (_fleet.position.x). In HORDE we
+	# therefore only feed the near-side enemies' volumes into consume_volumes, and keep an index map
+	# (`idx_map`) so the returned hit counts re-align to the correct _enemies entry. Far-side enemies
+	# still render/descend/breach — they just take no hits this frame. Outside HORDE idx_map is the
+	# identity (every enemy fed) so LEGACY/KINETIC/GEOM behaviour is byte-for-byte unchanged.
 	if _fleet != null and not _enemies.is_empty():
+		var horde: bool = _is_horde()
+		var fleet_side: int = _fleet_side() if horde else -1
 		var positions := PackedVector2Array()
 		var radii := PackedFloat32Array()
-		for e in _enemies:
+		var idx_map: PackedInt32Array = PackedInt32Array()   # fed-array index -> _enemies index
+		for ei in _enemies.size():
+			var e: Dictionary = _enemies[ei]
+			if horde and _side_of(float((e["pos"] as Vector2).x)) != fleet_side:
+				continue                                     # far-side: undamageable this frame
 			positions.append(e["pos"])
 			radii.append(_hit_radius(e))
+			idx_map.append(ei)
 		var hits: PackedInt32Array = _fleet.call("consume_volumes", positions, radii)
 		# Per-hit damage WEIGHT + pierce flag of the current stance (#79), fetched ONCE per
 		# frame. Null-safe: a bare unit-test Targets with no fleet falls back to SPRAY (1.0).
@@ -254,9 +473,11 @@ func step(delta: float) -> void:
 		# burst penalty). Falls back to hit_weight, then to SPRAY 1.0, for an older/bare fleet.
 		var cw: float = float(_fleet.call("crack_weight")) if _fleet.has_method("crack_weight") else hw
 		var pierce: bool = bool(_fleet.call("is_piercing")) if _fleet.has_method("is_piercing") else false
-		for i in _enemies.size():
-			if hits[i] > 0:
-				_apply_damage(_enemies[i], hits[i], hw, pierce, cw)
+		# Walk the FED set (== all enemies outside HORDE, the near-side subset in HORDE) and map each
+		# hit count back to its real _enemies entry via idx_map. Far-side enemies (not fed) get no hit.
+		for fi in idx_map.size():
+			if hits[fi] > 0:
+				_apply_damage(_enemies[idx_map[fi]], hits[fi], hw, pierce, cw)
 
 	# (2) Movement + lifecycle. Rebuild the live set: survivors are kept, dead/breached/
 	# offscreen are dropped (finite — no respawn), Fractal splits + multiply-through clones
@@ -295,8 +516,12 @@ func step(delta: float) -> void:
 		else:
 			_maybe_multiply(e, bands, to_add)             # multiply-through a + gate (#53)
 			survivors.append(e)                           # alive, on-screen — keep
+	# In HORDE the live ceiling is the SOFT cap (Debug.enemy_cap, UNBOUNDED) so a dialed-up field can
+	# actually reach the dialed count (push past 256 toward the perf wall); LEGACY/KINETIC/GEOM keep
+	# the MAX_ENEMIES const exactly as before.
+	var add_ceiling: int = _enemy_soft_cap() if _is_horde() else MAX_ENEMIES
 	for ne in to_add:
-		if survivors.size() < MAX_ENEMIES:
+		if survivors.size() < add_ceiling:
 			survivors.append(ne)
 	_enemies = survivors
 
@@ -364,6 +589,51 @@ func _armor_chip_fraction() -> float:
 	return ARMOR_CHIP_FRACTION
 
 
+## --- HORDE far-side firing boundary (#90, H1) --------------------------------
+## The centre-divider x that splits the playfield into a LEFT/RIGHT firing side. Mirrors
+## LaneArena.CENTER_X (kept as a local const so the pure step()/render maths never reach for a
+## node). An enemy is only DAMAGEABLE this frame if it shares its side with the fleet muzzle.
+const HORDE_CENTER_X := 540.0
+## How far down a far-side enemy's HDR colour is scaled in HORDE so it reads as un-shootable
+## (well below the bloom threshold of 1.0 for the dimmed channels, but still visible/descending).
+const HORDE_FARSIDE_DIM := 0.22
+
+## Which side of the divider a world x is on: 0 == LEFT (x < CENTER_X), 1 == RIGHT. Pure —
+## mirrors LaneArena.side_of so the filter + render dim key off one rule.
+func _side_of(x: float) -> int:
+	return 0 if x < HORDE_CENTER_X else 1
+
+
+## True only when this run is in HORDE mode (Settings.poc_mode == HORDE == 3). The far-side firing
+## filter + the far-side render dim are gated on this, so LEGACY/KINETIC/GEOM behave EXACTLY as
+## before (the full enemy set is always damageable). Null-safe: a bare unit-test Targets with no
+## autoload tree (or a fleet stub) reports false unless a test forces it via _force_horde.
+func _is_horde() -> bool:
+	if _force_horde:
+		return true
+	var loop := Engine.get_main_loop()
+	if loop is SceneTree:
+		var s: Node = (loop as SceneTree).root.get_node_or_null("Settings")
+		if s != null:
+			return int(s.get("poc_mode")) == 3   # Settings.PocMode.HORDE
+	return false
+
+
+## Test seam (#90): force HORDE on for a bare-instance headless verify that has no Settings autoload
+## in a HORDE state. Production never sets this — it reads the live Settings.poc_mode via _is_horde.
+var _force_horde: bool = false
+func set_force_horde(on: bool) -> void:
+	_force_horde = on
+
+
+## The fleet muzzle's side of the divider (0 LEFT / 1 RIGHT). The fleet's position.x IS the muzzle
+## (run.gd mirrors steer x onto it). Defaults to LEFT when there's no fleet (pure unit tests).
+func _fleet_side() -> int:
+	if _fleet == null:
+		return 0
+	return _side_of(float(_fleet.position.x))
+
+
 ## Null-safe handle to the Difficulty autoload (mirrors the bare-instance test path). Returns
 ## null if the autoload tree isn't present (pure-logic unit tests new() a Targets directly).
 func _difficulty_node() -> Node:
@@ -371,6 +641,17 @@ func _difficulty_node() -> Node:
 	if loop is SceneTree:
 		var r: Node = (loop as SceneTree).root
 		return r.get_node_or_null("Difficulty")
+	return null
+
+
+## Null-safe handle on the Debug autoload (designer-tuning knobs, P3). Same trick as
+## _difficulty_node: a bare-instance verify (no autoload tree) gets null and every reader below
+## falls back to the NEUTRAL default — so an un-wired Targets behaves exactly like today.
+func _debug_node() -> Node:
+	var loop := Engine.get_main_loop()
+	if loop is SceneTree:
+		var r: Node = (loop as SceneTree).root
+		return r.get_node_or_null("Debug")
 	return null
 
 
@@ -431,6 +712,12 @@ func _step_parked(e: Dictionary, survivors: Array[Dictionary]) -> void:
 ## x-span) DUPLICATES once — a fresh same-kind clone offset in x, itself flagged so it
 ## won't re-multiply at the same band. Clones land in `to_add` (capped by step()).
 func _maybe_multiply(e: Dictionary, bands: Array, to_add: Array[Dictionary]) -> void:
+	# HORDE (#90, P5): gates are a PLAYER firepower mechanic ONLY — enemies must NEVER multiply-through a
+	# +/× gate band. Early-return so the swarm can't free-spawn clones at the player's recovery gates
+	# (which would punish the player for steering toward firepower). No-op suppression for LEGACY/KINETIC/
+	# GEOM (the #53 multiply-through stays intact there).
+	if _is_horde():
+		return
 	if bands.is_empty() or bool(e.get("multiplied", false)):
 		return
 	var p: Vector2 = e["pos"]
@@ -484,13 +771,25 @@ func _bounty_mult() -> float:
 	return 1.0
 
 
-## An enemy reached the ship line: it breaches, draining the Glow Battery by its breach
-## cost (the loss pressure that makes shooting matter, #55). Caller drops it.
+## An enemy reached the ship line: it breaches. In HORDE (#90, H3) FIREPOWER is the loss channel, so a
+## breach removes `streams` of the swarm volume (GameState.drain_firepower → you die at 0). Outside HORDE
+## it drains the Glow Battery by its `breach` cost as before (#55). Either way it emits enemy_breached
+## (carrying the drained quantum for vfx/audio) and ripples the grid. Caller drops the enemy.
 func _breach(e: Dictionary) -> void:
 	breaches += 1
-	var dmg: float = float(e.get("breach", 6.0))
-	GameState.drain_battery(dmg)
-	Events.enemy_breached.emit(e["pos"], dmg)
+	if _is_horde():
+		var streams: int = int(e.get("streams", 1))
+		# P3 designer knob (GLOBAL — applies to a boss breach too, which is correct): scale the
+		# firepower cost of a breach. NEUTRAL 1.0 = today; 0.0 → no firepower lost (round). Null-safe.
+		var dbg: Node = _debug_node()
+		if dbg != null and dbg.has_method("firepower_loss"):
+			streams = int(round(float(streams) * float(dbg.call("firepower_loss"))))
+		GameState.drain_firepower(streams)
+		Events.enemy_breached.emit(e["pos"], float(streams))
+	else:
+		var dmg: float = float(e.get("breach", 6.0))
+		GameState.drain_battery(dmg)
+		Events.enemy_breached.emit(e["pos"], dmg)
 	Events.trigger_grid_ripple.emit(e["pos"], true)    # heavier inward pulse on a breach
 
 
@@ -518,6 +817,7 @@ func _new_enemy(kind: int, start_y: float) -> Dictionary:
 		"size": float(s["size"]), "speed": _rng.randf_range(spd[0], spd[1]),
 		"armor": int(s["armor"]), "points": int(s["points"]),
 		"breach": float(s["breach"]), "split": bool(s["split"]),
+		"streams": int(s.get("streams", 1)),   # #90 H3: HORDE firepower cost of a breach (GLITCH fodder = 1)
 		"flash": 0.0,
 		# #53 interaction state (defaults = an ordinary free enemy):
 		"parked": false,        # true = a gate-hijack occupant riding its gate
@@ -533,6 +833,7 @@ func _enemy_color(e: Dictionary) -> Color:
 		KIND_RHOMBUS: return Palette.ENEMY_RHOMBUS
 		KIND_FRACTAL: return Palette.ENEMY_FRACTAL
 		KIND_FRACTLING: return Palette.ENEMY_FRACTLING
+		KIND_LANEBOSS: return Palette.ENEMY_RHOMBUS_CORE   # #90 H4: white-hot crimson — reads as the heavy threat
 	return Palette.ENEMY_GLITCH
 
 
@@ -543,7 +844,10 @@ func _build_multimesh() -> void:
 	mm.transform_format = MultiMesh.TRANSFORM_2D
 	mm.use_colors = true
 	mm.mesh = quad
-	mm.instance_count = MAX_ENEMIES + MAX_BURSTS
+	# P3: GENEROUS HARD buffer (1024 enemies + bursts) sized once at build, so Debug.enemy_cap can be
+	# pushed well past 256 to find the perf wall WITHOUT rebuilding the MultiMesh. visible_instance_count
+	# still tracks the live count each _render (see below), so the over-size buffer costs nothing idle.
+	mm.instance_count = MMI_HARD_MAX + MAX_BURSTS
 	mm.visible_instance_count = 0
 	_mmi = MultiMeshInstance2D.new()
 	_mmi.name = "EnemyMultiMesh"
@@ -559,9 +863,17 @@ func _render() -> void:
 	if _mmi == null:
 		return
 	var mm := _mmi.multimesh
-	var n: int = mini(_enemies.size(), MAX_ENEMIES)
+	# P3: clamp to the HARD MultiMesh buffer (1024), NOT MAX_ENEMIES — the live set can exceed 128 now
+	# that Debug.enemy_cap drives the soft spawn cap, and every live enemy up to the buffer should render.
+	var n: int = mini(_enemies.size(), MMI_HARD_MAX)
 	var b_n: int = mini(_bursts.size(), MAX_BURSTS)
 	mm.visible_instance_count = n + b_n
+	# HORDE far-side DIM (#90, H1): enemies on the OPPOSITE side of the divider from the fleet muzzle
+	# are un-shootable this frame, so we dim them (multiply the instance colour down) to read "can't
+	# hit those" — the same per-instance-colour trick the armor tint uses, no extra draw call. Outside
+	# HORDE every enemy is full-bright (render is byte-for-byte unchanged for LEGACY/KINETIC/GEOM).
+	var horde_render: bool = _is_horde()
+	var fleet_render_side: int = _fleet_side() if horde_render else -1
 	for i in n:
 		var e := _enemies[i]
 		var p: Vector2 = e["pos"]
@@ -581,6 +893,9 @@ func _render() -> void:
 		var fl: float = float(e["flash"])
 		if fl > 0.0:
 			col = col.lerp(Palette.FLASH_WHITE, fl)  # per-impact pulse (punched up to full weight, #88)
+		# HORDE far-side dim: an enemy across the divider from the muzzle reads dark (un-shootable).
+		if horde_render and _side_of(float(p.x)) != fleet_render_side:
+			col = Color(col.r * HORDE_FARSIDE_DIM, col.g * HORDE_FARSIDE_DIM, col.b * HORDE_FARSIDE_DIM, col.a)
 		mm.set_instance_color(i, col)
 	# Death bursts: a white-hot diamond (tinted by the kind) that expands and fades.
 	for j in b_n:
@@ -593,13 +908,25 @@ func _render() -> void:
 		mm.set_instance_color(n + j, (bcol + Color(3.0, 3.0, 3.0, 0.0)) * life)
 
 
+## HOLLOW vector-outline diamond (#90 P0): a bright additive/HDR RIM where the Manhattan distance is
+## near `radius`, with a HARD alpha=0 interior — the glow-safe technique mirrored from
+## gate.gd._make_frame_texture. The transparent core emits nothing additively, so the bloom only catches
+## the rim (and the rim stays full-alpha white so the per-instance HDR tint still glows). White RGB so
+## the per-instance armor tint / impact flash / far-side dim all multiply the same quad as before.
 func _make_diamond_texture() -> ImageTexture:
 	var img := Image.create(DIAMOND_TEX_SIZE, DIAMOND_TEX_SIZE, false, Image.FORMAT_RGBA8)
 	var c := (DIAMOND_TEX_SIZE - 1) * 0.5
 	var radius := c - 2.0
+	var band := 5.0                                        # rim half-thickness (Manhattan px units)
 	for y in DIAMOND_TEX_SIZE:
 		for x in DIAMOND_TEX_SIZE:
-			var manhattan: float = absf(x - c) + absf(y - c)   # diamond / rhombus
-			var a: float = clampf((radius - manhattan) / 6.0, 0.0, 1.0)
-			img.set_pixel(x, y, Color(1, 1, 1, a * a))
+			var manhattan: float = absf(x - c) + absf(y - c)   # diamond / rhombus iso-contours
+			# Distance from the rim contour (manhattan == radius); brightest ON the rim, fading out by `band`.
+			var d: float = absf(manhattan - radius)
+			var a: float = clampf((band - d) / band, 0.0, 1.0)  # linear crisp rim, full alpha on-contour
+			# Hard negative-space core: anything well INSIDE the diamond stays fully transparent so the
+			# additive bloom leaves the centre crisp (a hollow vector outline, no glow bleed across the core).
+			if manhattan < radius - band:
+				a = 0.0
+			img.set_pixel(x, y, Color(1, 1, 1, a))
 	return ImageTexture.create_from_image(img)

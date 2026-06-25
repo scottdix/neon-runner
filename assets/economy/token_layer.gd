@@ -84,6 +84,11 @@ func set_ship_line(y: float) -> void:
 func _on_token_dropped(at: Vector2, value: int) -> void:
 	if value <= 0:
 		return
+	# P3 designer knob: Tokens:Off suppresses the drop entirely (no live token spawns). NEUTRAL
+	# default is ON (byte-identical to today). Null-safe — a bare-instance verify with no Debug
+	# autoload gets the default ON and still drops.
+	if not _tokens_on():
+		return
 	var t: Dictionary = _pool.pop_back() if not _pool.is_empty() else {}
 	t["pos"] = at
 	t["value"] = value
@@ -113,6 +118,17 @@ func _magnet_mult() -> float:
 		if lab != null and lab.has_method("magnet_radius_mult"):
 			return float(lab.call("magnet_radius_mult"))
 	return 1.0
+
+
+## Null-safe token-drop master toggle (P3 designer knob). Reads Debug.tokens_on() when the autoload
+## tree is present; defaults ON (drops) for a bare unit-test layer with no Debug autoload.
+func _tokens_on() -> bool:
+	var loop := Engine.get_main_loop()
+	if loop is SceneTree:
+		var dbg: Node = (loop as SceneTree).root.get_node_or_null("Debug")
+		if dbg != null and dbg.has_method("tokens_on"):
+			return bool(dbg.call("tokens_on"))
+	return true
 
 
 func _process(delta: float) -> void:

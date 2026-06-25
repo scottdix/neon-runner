@@ -36,6 +36,19 @@ func _initialize() -> void:
 		lines.append("RESULT=FAIL (GameState autoload missing)"); _write(lines); return
 	gs.call("wire_events")
 
+	# HORDE-lock reconcile: the game now FORCES Settings.poc_mode to HORDE, under which
+	# _restrict_op clamps sub/div -> add (firepower-only) and the SPRAY_AUG/LANCE_AUG stance
+	# families/ghosting are inactive. This verify exercises the LEGACY gate economy: ÷/− gate
+	# ops build as authored and add/sub derive SPRAY_AUG/LANCE_AUG for the wrong-stance ghosting
+	# axis. Set the global Settings.poc_mode to LEGACY (0) directly (NOT set_poc_mode, which
+	# persists) so the parked LEGACY behaviour runs. Production reads this global at build time.
+	# NOTE: this is RE-ASSERTED after the first `await process_frame` below, because the Settings
+	# autoload's _ready (-> load_settings, which force-sets HORDE) is DEFERRED under -s and would
+	# otherwise clobber this back to HORDE before the await-gated build_formations in test 8.
+	var settings_lock: Node = root.get_node_or_null("Settings")
+	if settings_lock != null:
+		settings_lock.set("poc_mode", 0)              # 0 == Settings.PocMode.LEGACY (un-clamped sub/div + stance families)
+
 	var O = GateS.Operation
 	var FAM = GateS.Family       # Gate.Family enum (#86/#88): SPRAY_AUG, LANCE_AUG, GEOM, UTILITY, DEVIL
 
@@ -198,6 +211,11 @@ func _initialize() -> void:
 	# would stay the default 0 / SPRAY_AUG and the fam_axis assertion below would spuriously fail.)
 	root.add_child(sp_g)
 	await process_frame
+	# Re-assert LEGACY after the await: the Settings autoload's deferred _ready -> load_settings
+	# (which force-sets HORDE) fires across this frame boundary under -s, so without this the
+	# build below would clamp sub->add and both gates would derive SPRAY_AUG (the fam_axis fail).
+	if settings_lock != null:
+		settings_lock.set("poc_mode", 0)              # 0 == Settings.PocMode.LEGACY
 	sp_g.call("build_formations", [
 		{"m": 30.0, "l": ["add", 5.0], "r": ["sub", 3.0]},
 	])

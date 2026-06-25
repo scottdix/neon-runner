@@ -215,3 +215,100 @@ static func ship_mark(color := Palette.ACCENT_CYAN_HUD, s := 3.0) -> Node2D:
 static func center_x(c: Control, y: float, width := DESIGN.x) -> Control:
 	c.position = Vector2((width - c.size.x) * 0.5, y)
 	return c
+
+
+## A labelled ON/OFF pill row (promoted from settings.gd so the Debug menu reuses it). `on_change`
+## is called with the new bool on each tap; the pill recolours to track state. `initial` seeds the
+## display. `width` is the row's content width (label left, pill right). Returns the row Control.
+static func toggle_row(label_text: String, initial: bool, on_change: Callable,
+		width := DESIGN.x - 180.0) -> Control:
+	var row := Control.new()
+	row.size = Vector2(width, 120.0)
+
+	var lab := text(label_text, Fonts.ui, 44, Palette.TEXT_MUTED_HUD)
+	lab.position = Vector2(0.0, 30.0)
+	row.add_child(lab)
+
+	var state := {"on": initial}
+	var pill := panel(Vector2(180.0, 84.0), Palette.ACCENT_CYAN_HUD, 0.0, 2.0, 42)
+	pill.position = Vector2(row.size.x - 180.0, 18.0)
+	var pl := text("", Fonts.arcade, 26, TEXT_BRIGHT, HORIZONTAL_ALIGNMENT_CENTER)
+	pl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	pill.add_child(pl)
+	row.add_child(pill)
+
+	var paint := func() -> void:
+		var on: bool = state["on"]
+		var accent: Color = Palette.MENU_MINT_HUD if on else Palette.TEXT_DIM_HUD
+		var sb := pill.get_theme_stylebox("panel") as StyleBoxFlat
+		sb.bg_color = fade(accent, 0.22 if on else 0.06)
+		sb.border_color = accent
+		pl.text = "ON" if on else "OFF"
+		pl.modulate = accent if on else Palette.TEXT_MUTED_HUD
+	paint.call()
+
+	hit_overlay(pill).pressed.connect(func() -> void:
+		state["on"] = not state["on"]
+		paint.call()
+		on_change.call(state["on"]))
+	return row
+
+
+## A numeric "− value +" stepper row for the Debug knobs. Holds a float `value`, tapping − / +
+## nudges it by `step` (clamped to [min_v, max_v]) and calls `on_change(new_value)`; the centre
+## label repaints via `fmt(value) -> String` so callers control int vs ×mult display. Pass
+## max_v = INF for an UNBOUNDED-upward knob (density / cap). Returns the row Control.
+static func stepper_row(label_text: String, initial: float, step: float,
+		min_v: float, max_v: float, fmt: Callable, on_change: Callable,
+		width := DESIGN.x - 180.0) -> Control:
+	var row := Control.new()
+	row.size = Vector2(width, 120.0)
+
+	var lab := text(label_text, Fonts.ui, 44, Palette.TEXT_MUTED_HUD)
+	lab.position = Vector2(0.0, 30.0)
+	row.add_child(lab)
+
+	var state := {"v": clampf(initial, min_v, max_v)}
+	var btn_w := 84.0
+	var val_w := 220.0
+	var group_w := btn_w * 2.0 + val_w
+	var group_x := row.size.x - group_w
+
+	var minus := panel(Vector2(btn_w, 84.0), Palette.ACCENT_CYAN_HUD, 0.08, 2.0, 14)
+	minus.position = Vector2(group_x, 18.0)
+	var ml := text("−", Fonts.arcade, 40, Palette.ACCENT_CYAN_HUD, HORIZONTAL_ALIGNMENT_CENTER)
+	ml.set_anchors_preset(Control.PRESET_FULL_RECT)
+	ml.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	minus.add_child(ml)
+	row.add_child(minus)
+
+	var val := text("", Fonts.arcade, 30, TEXT_BRIGHT, HORIZONTAL_ALIGNMENT_CENTER)
+	val.position = Vector2(group_x + btn_w, 18.0)
+	val.size = Vector2(val_w, 84.0)
+	val.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(val)
+
+	var plus := panel(Vector2(btn_w, 84.0), Palette.ACCENT_CYAN_HUD, 0.08, 2.0, 14)
+	plus.position = Vector2(group_x + btn_w + val_w, 18.0)
+	var pl := text("+", Fonts.arcade, 40, Palette.ACCENT_CYAN_HUD, HORIZONTAL_ALIGNMENT_CENTER)
+	pl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	plus.add_child(pl)
+	row.add_child(plus)
+
+	var paint := func() -> void:
+		val.text = fmt.call(state["v"])
+	paint.call()
+
+	var nudge := func(dir: float) -> void:
+		var nv: float = clampf(state["v"] + dir * step, min_v, max_v)
+		if is_equal_approx(nv, state["v"]):
+			return
+		state["v"] = nv
+		paint.call()
+		on_change.call(nv)
+
+	hit_overlay(minus).pressed.connect(func() -> void: nudge.call(-1.0))
+	hit_overlay(plus).pressed.connect(func() -> void: nudge.call(1.0))
+	return row

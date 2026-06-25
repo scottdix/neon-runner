@@ -38,17 +38,20 @@ const SWARM_SPARK := Color(5.5, 5.0, 3.2, 1.0)
 ## archetype owns a recognisable HUE: Glitch = hot pink/magenta-rose, Rhombus = deep crimson
 ## (reads most dangerous), Fractal = violet/purple, Fractling = a pale dim shard of the violet.
 const ENEMY_ROSE := Color(3.9, 0.05, 1.95, 1.0)
-## Glitch — hot pink / magenta-rose (the bread-and-butter swarm target).
-const ENEMY_GLITCH := Color(3.9, 0.10, 2.4, 1.0)
-## Rhombus — deep crimson / red-leaning (the armored bruiser; reads most dangerous).
-const ENEMY_RHOMBUS := Color(3.9, 0.05, 0.6, 1.0)
-## Rhombus ARMORED CORE — near-white-hot crimson tint the armor tell blends toward, so a
+## HORDE recolour (#90 P0): the enemy archetypes are now HOLLOW vector outlines and split by HUE so
+## they read against the COOL cyan divider — Glitch = HOT PINK, Rhombus = NEON GREEN (the lane bruiser),
+## Fractling = hot-pink family; Fractal stays VIOLET. All HDR (>1 channel) so the rims still bloom.
+## Glitch — HOT PINK / magenta (the bread-and-butter fodder; the dominant lane colour).
+const ENEMY_GLITCH := Color(3.9, 0.10, 2.2, 1.0)
+## Rhombus — NEON GREEN (the armored bruiser; was crimson — now green so it contrasts the pink fodder).
+const ENEMY_RHOMBUS := Color(0.4, 3.9, 0.6, 1.0)
+## Rhombus ARMORED CORE — near-white-hot green tint the armor tell blends toward, so a
 ## still-armored Rhombus rim reads brighter/hotter than a cracked one (#88).
-const ENEMY_RHOMBUS_CORE := Color(5.4, 1.6, 1.9, 1.0)
-## Fractal — violet / purple, clearly distinct from the Glitch pink.
+const ENEMY_RHOMBUS_CORE := Color(2.6, 5.4, 2.8, 1.0)
+## Fractal — violet / purple, kept distinct from the Glitch pink and the green Rhombus.
 const ENEMY_FRACTAL := Color(2.6, 0.06, 3.6, 1.0)
-## Fractling — a pale, dim shard of the Fractal violet.
-const ENEMY_FRACTLING := Color(1.9, 0.10, 2.6, 1.0)
+## Fractling — a hot-pink-family shard (a paler sibling of the Glitch pink).
+const ENEMY_FRACTLING := Color(3.4, 0.45, 2.2, 1.0)
 
 # --- Gates (3 distinct operator colours — explicit decision, see DESIGN_SPEC) -
 ## ×N multiply. magenta #ff2bd6 (kept distinct from +; collision-free now enemies
@@ -82,6 +85,12 @@ const GATE_FAMILY_DEVIL := Color(3.9, 1.7, 0.15, 1.0)
 const FLASH_WHITE := Color(6.0, 5.5, 6.0, 1.0)
 ## "RUN COMPLETE" finish bar — acid green per DESIGN_SPEC (same family as +gate).
 const SUCCESS_GREEN := Color(0.8, 3.8, 0.3, 1.0)
+
+# --- HORDE arena divider (cool neon) -----------------------------------------
+## The permanent centre divider (#90 P0): a COOL electric-blue / cyan that contrasts the HOT PINK +
+## NEON GREEN enemies. HDR (>1) so the thin line still reads white-hot through the bloom. Cyan-leaning
+## (high G+B, low R) so it sits clearly on the cool axis opposite the warm enemy danger band.
+const DIVIDER_CYAN := Color(0.25, 2.8, 3.9, 1.0)
 
 # --- Reactive grid floor (blue) ----------------------------------------------
 ## Faint warping vector grid. #1a1aff. HDR-blue so the lines bloom faintly; the

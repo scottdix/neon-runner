@@ -42,8 +42,12 @@ var difficulty: int = 1
 ##   GEOM_OVERDRIVE — default SPRAY; a triple-tap burns kill-fed geom_charge for a LANCE overdrive.
 ## Default LEGACY so an un-touched install plays the shipped combat. Persisted under PROGRESS; the
 ## run's StanceController reads it at game_started. Selected on the Settings screen (device-friendly).
-enum PocMode { LEGACY, KINETIC_CLUTCH, GEOM_OVERDRIVE }
-var poc_mode: int = PocMode.LEGACY
+## HORDE locked as core game (reversible — restore the selector + the persisted read to bring
+## back mode switching). Default is HORDE and load_settings forces it unconditionally, so the
+## game is ALWAYS HORDE regardless of any old persisted config. The LEGACY/KINETIC/GEOM paths
+## stay in place (parked) for a future re-enable.
+enum PocMode { LEGACY, KINETIC_CLUTCH, GEOM_OVERDRIVE, HORDE }
+var poc_mode: int = PocMode.HORDE
 
 
 func _ready() -> void:
@@ -101,12 +105,12 @@ func set_difficulty(mode: int) -> void:
 	Events.difficulty_changed.emit(difficulty)
 
 
-## Set the POC stance-driver mode (#86/#87): clamp to 0..2, no-op on no change, persist, announce on
-## the Events bus. The run's StanceController re-reads the active mode (it caches at game_started, so
+## Set the POC stance-driver mode (#86/#87/HORDE): clamp to 0..3, no-op on no change, persist, announce
+## on the Events bus. The run's StanceController re-reads the active mode (it caches at game_started, so
 ## the change takes effect on the NEXT run — intentional, the mode is locked in pre-run); any open
 ## Settings selector relights. Settings is the SINGLE owner of the persisted int.
 func set_poc_mode(mode: int) -> void:
-	var m: int = clampi(mode, 0, 2)
+	var m: int = clampi(mode, 0, 3)
 	if m == poc_mode:
 		return
 	poc_mode = m
@@ -136,7 +140,9 @@ func load_settings() -> void:
 	perf_overlay_enabled = bool(cfg.get_value(SECTION, "perf_overlay_enabled", perf_overlay_enabled))
 	best_score = int(cfg.get_value(PROGRESS, "best_score", best_score))
 	difficulty = clampi(int(cfg.get_value(PROGRESS, "difficulty", difficulty)), 0, 2)
-	poc_mode = clampi(int(cfg.get_value(PROGRESS, "poc_mode", poc_mode)), 0, 2)
+	# HORDE locked as core game (reversible — restore the persisted read below to bring back mode
+	# switching): force HORDE unconditionally, IGNORING any persisted poc_mode value.
+	poc_mode = PocMode.HORDE
 
 
 func save_settings() -> void:

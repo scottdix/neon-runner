@@ -15,6 +15,12 @@ extends Node
 # loads headless fine; the preload is only the in-code default.
 const LEVEL_DEF := preload("res://resources/level_def.gd")
 const DEFAULT_LEVEL_PATH := "res://data/level_01.tres"
+## HORDE (#90, H5): the survival-mode level. has_boss=false (auto-completes at length_m), a finite
+## ~75 s survival length (600 m @ 8 m/s), EMPTY enemy_waves (the continuous fodder spawner
+## Targets.set_horde replaces authored waves), and a +/×-ONLY gate_formations schedule — those gates
+## are the PLAYER firepower-recovery mechanic (HORDE gates are add/mul only; enemies ignore them). The
+## WIN is "survive to the finish": tick_run auto-completes at length_m because has_boss is false.
+const HORDE_LEVEL_PATH := "res://data/level_horde.tres"
 
 ## Fire volume / swarm size. Drives the fleet's rate of fire (#52). Gates mutate
 ## this; the fleet and HUD react via Events, not direct calls.
@@ -72,6 +78,13 @@ var glow_battery: float = MAX_GLOW_BATTERY
 ## Starting swarm volume for a fresh run. Small but non-zero so the stream is
 ## visibly firing from frame one.
 const START_PROJECTILES := 20
+
+## HORDE (#90, H3) — FIREPOWER-AS-HEALTH. In HORDE the swarm volume (projectile_count) doubles as the
+## loss channel: the run seeds this firepower at start (instead of START_PROJECTILES), a breach removes
+## a chunk (drain_firepower), and the run fails when it hits 0. The Glow Battery is left inert in HORDE
+## (no negative gates / no battery drain feed it — the battery bar is repurposed as the FIREPOWER bar by
+## run.gd). Inert for LEGACY/KINETIC/GEOM, which seed START_PROJECTILES and bleed the battery as before.
+const HORDE_START_FIREPOWER := 40
 
 ## Kill-combo scoring. Consecutive kills within COMBO_WINDOW seconds raise a score
 ## multiplier; a lull resets it to 1×. Wires the previously-dormant combo/multiplier
@@ -298,7 +311,14 @@ func start_run() -> void:
 	peak_fleet = 0
 	best_combo = 0
 	is_new_best = false
-	set_projectile_count(START_PROJECTILES)
+	# HORDE (#90, H3): firepower IS health — seed the bigger HORDE_START_FIREPOWER swarm (the loss channel)
+	# instead of the small starter volume, and leave the Glow Battery inert (no negative gates feed it in
+	# HORDE; run.gd repurposes the battery bar as the FIREPOWER readout). LEGACY/KINETIC/GEOM seed the
+	# normal START_PROJECTILES and bleed the battery as before.
+	if int(Settings.poc_mode) == Settings.PocMode.HORDE:
+		set_projectile_count(HORDE_START_FIREPOWER)
+	else:
+		set_projectile_count(START_PROJECTILES)
 	Events.score_changed.emit(score)
 	Events.distance_changed.emit(distance, 0.0)
 	Events.glow_battery_changed.emit(glow_battery, MAX_GLOW_BATTERY)
@@ -307,6 +327,19 @@ func start_run() -> void:
 	Events.tokens_changed.emit(run_tokens)   # #78: reset the in-run wallet display
 	Events.geom_changed.emit(geom_charge, MAX_GEOM)  # #87: reset the overdrive gauge display
 	Events.game_started.emit()
+
+
+## HORDE (#90, H3): FIREPOWER-AS-HEALTH drain. A breach removes `streams` of the swarm volume via
+## add_projectiles (which clamps >= 0 and emits projectile_count_changed, so the fleet thins/shatters
+## and the run.gd FIREPOWER bar follows). When the firepower hits 0 the run fails — projectile_count IS
+## the loss channel in HORDE. No-op once the run has ended (mirrors drain_battery). Only Targets._breach
+## calls this, and only in HORDE; the Glow Battery stays inert there.
+func drain_firepower(streams: int) -> void:
+	if not run_active:
+		return
+	add_projectiles(-streams)
+	if projectile_count <= 0:
+		fail_run()
 
 
 ## Drain the Glow Battery (positive `amount` removes charge). Announces the change
@@ -376,6 +409,21 @@ func end_run() -> void:
 ## Load this run's level: the authored .tres if present, else a code default so
 ## the run is always playable (and headless tests never depend on the import cache).
 func _load_level() -> Resource:
+	# HORDE (#90, H5) swaps in the survival level (has_boss=false → auto-complete at length_m, empty
+	# enemy_waves — the fodder spawner is the loop — plus a +/×-only firepower-recovery gate schedule).
+	# LEGACY/KINETIC/GEOM keep the authored DEFAULT_LEVEL_PATH byte-for-byte. If the HORDE .tres is
+	# somehow absent, fall back to a degenerate gate-less safety level (has_boss off, no formations) so
+	# a HORDE run is always at least playable — survival still ends at length_m.
+	if int(Settings.poc_mode) == Settings.PocMode.HORDE:
+		var hv: Resource = load(HORDE_LEVEL_PATH)
+		if hv == null:
+			hv = LEVEL_DEF.new()
+			hv.set("display_name", "Horde")
+			hv.set("length_m", 600.0)
+			hv.set("has_boss", false)
+			hv.set("gate_formations", [])
+			hv.set("enemy_waves", [])
+		return hv
 	var lv: Resource = load(DEFAULT_LEVEL_PATH)
 	if lv == null:
 		lv = LEVEL_DEF.new()

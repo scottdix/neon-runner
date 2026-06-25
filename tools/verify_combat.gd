@@ -34,6 +34,15 @@ func _initialize() -> void:
 		lines.append("RESULT=FAIL (autoloads missing)"); _write(lines); return
 	gs.call("wire_events")
 
+	# The batch locked poc_mode to forced-HORDE, where a breach drains FIREPOWER (projectile_count)
+	# instead of the Glow Battery. Tests 5 + 6b exercise the LEGACY battery-drain-on-breach loss
+	# channel (battery -6 on a glitch breach; an emptied battery fails the run mid-step), so force
+	# the global Settings to LEGACY (0) here — set the field directly, NOT set_poc_mode (which
+	# persists). Production reads Settings.poc_mode in Targets._breach, so this restores that path.
+	var s: Node = root.get_node_or_null("Settings")
+	if s:
+		s.set("poc_mode", 0)                                # 0 == Settings.PocMode.LEGACY
+
 	# 1) Fleet.consume_volumes — batched collision + x-band cull. Build a stream from
 	#    x=540, then resolve two volumes: one ON the stream, one far in x (must cull
 	#    to 0). Bullets are consumed exactly once and only by the near volume.

@@ -2,8 +2,9 @@ extends SceneTree
 ## Headless verification for the session-12 design-integration slice:
 ##   - Palette       : autoload present; HDR tokens clear the bloom threshold (a channel
 ##                     > 1), HUD tokens stay <= 1; gate operators are 3 distinct hues.
-##   - Entropy rose  : all enemy archetypes read one ROSE family (red-dominant, low green)
-##                     but stay distinguishable by intensity (chosen direction).
+##   - Entropy hues  : HORDE recolour (#90 P0) — Glitch & Fractling = hot-pink fodder family,
+##                     Rhombus = NEON GREEN (lane bruiser), Fractal = VIOLET; the three hue
+##                     families stay mutually distinguishable.
 ##   - Settings      : defaults; set_amoled_mode emits amoled_mode_changed + persists
 ##                     (ConfigFile round-trip).
 ##   - Haptics       : wire() idempotent; tier calls + a gate_passed emit don't error
@@ -57,25 +58,43 @@ func _initialize() -> void:
 	if ok:
 		lines.append("palette OK: HDR>1 / HUD<=1 split holds; 3 distinct gate hues")
 
-	# 2) Entropy faction reads as one ROSE family but stays tellable apart by intensity.
+	# 2) Entropy palette — HORDE recolour (#90 P0): the archetypes are split by HUE to read against
+	#    the cool cyan divider. Glitch & Fractling are the HOT-PINK fodder family (red-dominant, low
+	#    green, blue present), Rhombus is NEON GREEN (deliberately a different hue — the lane bruiser),
+	#    Fractal is VIOLET (blue-dominant, low green). We assert each archetype's hue INTENT and that
+	#    the three families are mutually DISTINGUISHABLE, rather than pinning brittle HDR values (the
+	#    designer is still tuning hues on-device).
 	var TargetsS: GDScript = load("res://assets/obstacles/targets.gd")
 	var tg: Node2D = TargetsS.new()
-	var rose := []
-	for kind in [TargetsS.KIND_GLITCH, TargetsS.KIND_RHOMBUS, TargetsS.KIND_FRACTAL, TargetsS.KIND_FRACTLING]:
-		var col: Color = tg.call("_enemy_color", {"kind": kind})
-		rose.append(col)
-		# Rose = red-dominant with low green; blue present (the #ff007f pink lean).
-		if not (col.r > 1.0 and col.g < col.r * 0.25 and col.r > col.g):
-			lines.append("rose FAIL: archetype %d is not in the hot-rose family (%.2f,%.2f,%.2f)" % [
-				kind, col.r, col.g, col.b]); ok = false
-	var distinct := {}
-	for c in rose:
-		distinct[var_to_str(c)] = true
-	lines.append("entropy rose: 4 archetypes, %d distinct intensities" % distinct.size())
-	if distinct.size() < 3:
-		lines.append("rose FAIL: archetypes not visually separable (need varied intensity)"); ok = false
+	var glitch: Color = tg.call("_enemy_color", {"kind": TargetsS.KIND_GLITCH})
+	var rhombus: Color = tg.call("_enemy_color", {"kind": TargetsS.KIND_RHOMBUS})
+	var fractal: Color = tg.call("_enemy_color", {"kind": TargetsS.KIND_FRACTAL})
+	var fractling: Color = tg.call("_enemy_color", {"kind": TargetsS.KIND_FRACTLING})
+	# Hot-pink fodder family: red-dominant, low green, blue present (the #ff007f-ish magenta-rose lean).
+	for entry in [["glitch", glitch], ["fractling", fractling]]:
+		var nm: String = entry[0]
+		var c: Color = entry[1]
+		if not (c.r > 1.0 and c.g < c.r * 0.35 and c.r > c.g and c.b > 0.5):
+			lines.append("palette FAIL: %s is not in the hot-pink fodder family (%.2f,%.2f,%.2f)" % [
+				nm, c.r, c.g, c.b]); ok = false
+	# Rhombus = NEON GREEN: green-dominant, well clear of red (a different hue from the pink fodder).
+	if not (rhombus.g > 1.0 and rhombus.g > rhombus.r and rhombus.g > rhombus.b):
+		lines.append("palette FAIL: Rhombus is not NEON GREEN (%.2f,%.2f,%.2f)" % [
+			rhombus.r, rhombus.g, rhombus.b]); ok = false
+	# Fractal = VIOLET: blue-dominant with low green (kept distinct from pink fodder and green Rhombus).
+	if not (fractal.b > 1.0 and fractal.g < fractal.b * 0.25 and fractal.b > fractal.g):
+		lines.append("palette FAIL: Fractal is not VIOLET (%.2f,%.2f,%.2f)" % [
+			fractal.r, fractal.g, fractal.b]); ok = false
+	# Distinguishability: the three hue families (pink fodder / green Rhombus / violet Fractal) are
+	# mutually distinct colours — the whole point of the recolour is telling them apart on-screen.
+	var families := {}
+	for c in [glitch, rhombus, fractal]:
+		families[var_to_str(c)] = true
+	lines.append("entropy palette: glitch/fractling=pink, rhombus=green, fractal=violet, %d distinct hue families" % families.size())
+	if families.size() < 3:
+		lines.append("palette FAIL: enemy hue families not mutually distinguishable"); ok = false
 	if ok:
-		lines.append("rose OK: one faction hue, varied by intensity (glitch/rhombus/fractal/fractling)")
+		lines.append("palette OK: hot-pink fodder (glitch/fractling) vs neon-green Rhombus vs violet Fractal")
 	tg.free()
 
 	# 3) Settings — defaults, toggle emits + persists.

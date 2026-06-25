@@ -2,21 +2,26 @@ extends SceneTree
 ## Headless verification for enemy READABILITY — the four Entropy archetypes must stay
 ## visually tellable apart, and the armor tell must read as a distinct colour (#88).
 ##
-## Direction (session 12): one faction hue family, varied by INTENSITY so the four
-## archetypes read as one faction but stay distinguishable. This verify is the regression
-## GUARD: it pins the four archetype hues apart by a minimum hue distance so a future
-## Palette edit can't silently re-merge two archetypes into the same on-screen colour, and
-## it pins the armored render path to a DIFFERENT colour than the unarmored base.
+## Direction (HORDE recolour, #90): the archetypes split by HUE so they read against the cool
+## cyan divider — Glitch = HOT PINK, Rhombus = NEON GREEN (the lane bruiser), Fractal = VIOLET,
+## and Fractling is a PALER SIBLING of the Glitch pink (same hot-pink fodder family). This verify
+## is the regression GUARD: it pins the pink fodder family apart from the green/violet archetypes
+## by a minimum hue distance so a future Palette edit can't silently merge the green or violet back
+## into the pink, pins the two same-family pinks (Glitch/Fractling) apart by INTENSITY so the
+## fodder shard stays tellable from its parent, and pins the armored render path to a DIFFERENT
+## colour than the unarmored base.
 ##
 ## GPU-free: pure colour math on the real Palette constants + a bare Targets instance, then
 ## writes a verdict file the runner polls for (CLAUDE.md gotchas). Run:
 ##   tools/run-headless.sh res://tools/verify_readability.gd /tmp/verify_readability_result.txt
 ##
 ## Asserts:
-##   1. The four archetype hues (Glitch/Rhombus/Fractal/Fractling) are pairwise separated
-##      beyond a hue-distance threshold (regression guard against a palette re-merge). HDR
-##      colours (RGB > 1.0) are normalised to LDR before .h, since hue of an unclamped HDR
-##      colour is meaningless — the screen sees the tone-mapped/clamped hue.
+##   1. The pink fodder family (Glitch/Fractling) is hue-separated from the non-pink archetypes
+##      (Rhombus green, Fractal violet) beyond a hue-distance threshold (regression guard against
+##      a palette re-merge); Glitch vs Fractling — the SAME pink family — are guarded by INTENSITY
+##      instead, since they share a hue by design. HDR colours (RGB > 1.0) are normalised to LDR
+##      before .h, since hue of an unclamped HDR colour is meaningless — the screen sees the
+##      tone-mapped/clamped hue.
 ##   2. Targets._enemy_color returns the distinct Palette constant per kind (the four kinds
 ##      map to four different colours, matching the per-kind constants).
 ##   3. The armored render path (armor > 0) produces a DIFFERENT colour than armor == 0 of
@@ -29,10 +34,10 @@ const RESULT_PATH := "/tmp/verify_readability_result.txt"
 ## it only has to catch a future edit that collapses two of them to the SAME hue.
 const HUE_SEPARATION_MIN := 0.015
 
-## Minimum intensity (max-channel HDR brightness) gap between the Fractal and its Fractling shard.
-## They share a hue by design (Fractling = "a pale, dim shard of the Fractal violet"), so this is the
-## axis that keeps them tellable apart. Fractal peaks at 3.6, Fractling at 2.6 (gap 1.0); 0.5 leaves
-## headroom while still catching an edit that equalised their intensity.
+## Minimum intensity (max-channel HDR brightness) gap between Glitch and its Fractling shard.
+## They share a hue by design (Fractling = "a paler sibling of the Glitch pink" — palette.gd), so
+## this is the axis that keeps them tellable apart. Glitch peaks at 3.9, Fractling at 3.4 (gap 0.5);
+## the threshold is set to that gap so it still catches an edit that equalised their intensity.
 const INTENSITY_SEPARATION_MIN := 0.5
 
 ## Replicates Targets._render()'s armor-tell blend weight: a_w = clampf(0.18 * armor, 0, 0.6).
@@ -61,19 +66,21 @@ func _initialize() -> void:
 	}
 
 	# --- 1) Archetype separation (regression guard) -----------------------------
-	# The palette tells the four archetypes apart on TWO axes, not one: Glitch/Rhombus/Fractal are
-	# three DISTINCT hues, while FRACTLING is deliberately the Fractal violet at LOWER INTENSITY (a
-	# "pale, dim shard of the Fractal" — palette.gd), i.e. same hue, different brightness. So the
-	# guard is split: (a) the three distinct-hue archetypes must stay pairwise hue-separated, and
-	# (b) Fractal vs Fractling must stay separated by brightness/value (their hue distance is ~0 by
-	# design). Normalise each HDR colour to LDR before reading .h: an unclamped HDR Color's hue is
-	# not what the screen shows (bloom tone-maps it), so divide by the max channel first.
+	# The palette tells the four archetypes apart on TWO axes, not one (HORDE recolour #90): the three
+	# colour FAMILIES — Glitch PINK, Rhombus GREEN, Fractal VIOLET — are DISTINCT hues, while FRACTLING
+	# is deliberately the GLITCH PINK at LOWER INTENSITY (a "paler sibling of the Glitch pink" —
+	# palette.gd), i.e. same hue family, different brightness. So the guard is split: (a) the three
+	# distinct-hue families must stay pairwise hue-separated (Fractling counted in the pink family via
+	# Glitch), and (b) Glitch vs Fractling must stay separated by brightness/value (their hue distance
+	# is ~0 by design). Normalise each HDR colour to LDR before reading .h: an unclamped HDR Color's
+	# hue is not what the screen shows (bloom tone-maps it), so divide by the max channel first.
 	var names: Array = hues.keys()
 	for i in names.size():
 		var ci: float = _hue_of(hues[names[i]])
 		lines.append("hue %s = %.3f (normalised)" % [names[i], ci])
-	# (a) Hue separation across the three DISTINCT-hue archetypes (Fractling excluded — it shares the
-	# Fractal hue on purpose; it is guarded by intensity below).
+	# (a) Hue separation across the three DISTINCT-hue families. Fractling is excluded as its own
+	# entry — it shares the Glitch pink hue on purpose (guarded by intensity below) — but Glitch
+	# stands in for the whole pink family, so a green/violet that drifted onto the pink hue is caught.
 	var hue_names: Array = ["GLITCH", "RHOMBUS", "FRACTAL"]
 	var min_pair := ""
 	var min_dist := 2.0
@@ -88,21 +95,21 @@ func _initialize() -> void:
 	lines.append("closest distinct-hue pair %s at hue-dist %.4f (min allowed %.4f)" % [
 		min_pair, min_dist, HUE_SEPARATION_MIN])
 	if min_dist < HUE_SEPARATION_MIN:
-		lines.append("separation FAIL: two distinct-hue archetypes share ~the same hue — a palette edit re-merged them"); ok = false
+		lines.append("separation FAIL: two distinct-hue families share ~the same hue — a palette edit re-merged them"); ok = false
 	else:
-		lines.append("separation OK: Glitch/Rhombus/Fractal hues are pairwise distinct")
-	# (b) Fractal vs Fractling: same hue by design, so they must instead read apart by INTENSITY
-	# (max-channel brightness). Guards the "pale dim shard" relationship — a palette edit that
+		lines.append("separation OK: Glitch(pink)/Rhombus(green)/Fractal(violet) hues are pairwise distinct")
+	# (b) Glitch vs Fractling: same pink hue by design, so they must instead read apart by INTENSITY
+	# (max-channel brightness). Guards the "paler sibling" relationship — a palette edit that
 	# equalised their intensity would collapse them on screen even though their hue is shared.
-	var fractal_v: float = _intensity(hues["FRACTAL"])
+	var glitch_v: float = _intensity(hues["GLITCH"])
 	var fractling_v: float = _intensity(hues["FRACTLING"])
-	var v_gap: float = absf(fractal_v - fractling_v)
-	lines.append("Fractal vs Fractling intensity %.2f vs %.2f (gap %.2f, min allowed %.2f)" % [
-		fractal_v, fractling_v, v_gap, INTENSITY_SEPARATION_MIN])
+	var v_gap: float = absf(glitch_v - fractling_v)
+	lines.append("Glitch vs Fractling intensity %.2f vs %.2f (gap %.2f, min allowed %.2f)" % [
+		glitch_v, fractling_v, v_gap, INTENSITY_SEPARATION_MIN])
 	if v_gap < INTENSITY_SEPARATION_MIN:
-		lines.append("intensity FAIL: Fractling is no longer a dimmer shade of the Fractal hue — they read alike"); ok = false
+		lines.append("intensity FAIL: Fractling is no longer a paler shade of the Glitch pink — they read alike"); ok = false
 	else:
-		lines.append("intensity OK: Fractling reads as a dimmer shard of the Fractal violet")
+		lines.append("intensity OK: Fractling reads as a paler sibling of the Glitch pink")
 
 	# The four constants must also be FOUR DISTINCT Color values (a guard against an edit
 	# that aliases two constants to the identical RGB even at equal hue/intensity).

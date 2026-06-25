@@ -24,6 +24,14 @@ func _initialize() -> void:
 		lines.append("RESULT=FAIL (autoloads missing)"); _write(lines); return
 	gs.call("wire_events")
 
+	# The game is now LOCKED to HORDE (Settings.poc_mode forced to HORDE), where gates are a
+	# PLAYER-only firepower mechanic — enemy gate-hijack park (targets.gd:440) and multiply-through
+	# (targets.gd:719) are both intentionally suppressed via _is_horde(). These #53 cross-cutting
+	# interactions only exist on the LEGACY path, so force the global Settings to LEGACY (0) to
+	# exercise the parked behaviour. Set the field directly (do NOT call set_poc_mode — it persists).
+	var st: Node = root.get_node_or_null("Settings")
+	if st: st.set("poc_mode", 0)   # 0 = PocMode.LEGACY
+
 	var SpawnerS: GDScript = load("res://assets/gates/gate_spawner.gd")
 	var TargetsS: GDScript = load("res://assets/obstacles/targets.gd")
 	if SpawnerS == null or TargetsS == null:
