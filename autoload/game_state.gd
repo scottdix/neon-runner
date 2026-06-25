@@ -91,6 +91,26 @@ var peak_fleet: int = 0
 var best_combo: int = 0
 var is_new_best: bool = false
 
+## Phase-scoped buff state (#84 phase 6). These are RESET to neutral on EVERY phase boundary
+## (Events.phase_changed → _reset_phase_buffs) AND in start_run — a buff bought from an Efficiency
+## gate lasts only for the phase it was claimed in (the "phase clear" is the next boundary). The
+## Efficiency tradeoff lives here: geom_drain_mult scales LANCE charge burn (StanceController reads
+## it), burst_damage_mult scales LANCE/overdrive per-hit weight (Fleet.hit_weight reads it).
+var geom_drain_mult: float = 1.0
+var burst_damage_mult: float = 1.0
+
+## Tungsten armor-cracking buff (#84 phase 5) — GLOBAL / whole-run, NOT phase-scoped. Reset to 1.0
+## in start_run ONLY (survives phase boundaries, so it is deliberately absent from _reset_phase_buffs).
+## Scales the LANCE hit weight (Fleet.hit_weight), the single seam that drives Rhombus armor-cracking
+## (there is no per-bullet pierce count — weight IS the cracking lever). Latches the highest mult seen.
+var lance_hit_weight_mult: float = 1.0
+
+## Gate-effect dispatch table (the seam): effect_id -> Callable handler. Populated in wire_events
+## (so the bound _fx_* Callables capture this live autoload). Each handler is the SINGLE owner of
+## the run-state mutation for its effect; _on_gate_effect looks the id up here and .call(params)s it,
+## warning + no-op on an unknown id (forward-compatible with unshipped effects).
+var _gate_effects: Dictionary = {}
+
 
 func _ready() -> void:
 	wire_events()
@@ -106,6 +126,24 @@ func _ready() -> void:
 func wire_events() -> void:
 	if not Events.gate_passed.is_connected(_on_gate_passed):
 		Events.gate_passed.connect(_on_gate_passed)
+	# Gate-effect dispatch seam: a NON-arithmetic gate emits Events.gate_effect (instead of
+	# gate_passed) and GameState routes effect_id through this Callable table. A map keeps every
+	# state mutation inside GameState (single-owner rule) and is O(1) to extend — new effects add a
+	# row here + a _fx_* method, with no change to gate_passed or its count-semantics consumers.
+	# Built here (not as a member initialiser) so the bound Callables capture this live instance.
+	_gate_effects = {
+		"geom_cache": _fx_geom_cache,
+		"tungsten": _fx_tungsten,
+		"efficiency": _fx_efficiency,
+	}
+	if not Events.gate_effect.is_connected(_on_gate_effect):
+		Events.gate_effect.connect(_on_gate_effect)
+	# Phase boundaries are the "phase clear" for phase-scoped buffs (#84 phase 6): the PhaseDirector
+	# emits phase_changed ONLY on a forward boundary (there is no phase-clear event), so consuming it
+	# here resets the per-phase Efficiency mults each time a new phase begins. Bound to a lambda that
+	# discards the (index, name, config) args — the reset is unconditional, it doesn't read the phase.
+	if not Events.phase_changed.is_connected(_on_phase_changed):
+		Events.phase_changed.connect(_on_phase_changed)
 	# GEOM_OVERDRIVE POC (#87): every kill feeds the overdrive charge. Listening here (not in the
 	# StanceController) keeps the charge filling regardless of which POC is active, so switching modes
 	# never strands a half-built gauge; the StanceController only GATES the burn on poc_mode.
@@ -134,6 +172,58 @@ func _on_gate_passed(gate_type: String, _value: float, new_count: int) -> void:
 		drain_battery(DRAIN_PER_NEGATIVE_GATE * Difficulty.drain_mult())
 	elif legacy:
 		set_stance(Stance.SPRAY)
+
+
+## Dispatch a NON-arithmetic gate effect (the seam). A gate with a non-empty effect_id emits
+## Events.gate_effect instead of gate_passed; we look effect_id up in the Callable table and run its
+## handler (which owns the actual state mutation — single-owner rule). An unknown id warns and no-ops
+## so an unshipped/typo'd effect fails soft rather than crashing the run. `at` is forwarded to the
+## handlers that want a position (vfx); the stubs ignore it for now.
+func _on_gate_effect(effect_id: String, params: Dictionary, _at: Vector2) -> void:
+	var handler: Variant = _gate_effects.get(effect_id)
+	if handler is Callable:
+		(handler as Callable).call(params)
+	else:
+		push_warning("GameState: unknown gate effect_id '%s' — no-op" % effect_id)
+
+
+## Gate effect handler (the seam). Bodies are STUBS — registered in _gate_effects so the dispatch
+## compiles and routes today; the real economy mutation is filled in a later phase.
+## Geom Cache (phase 4): instantly grant Geom charge. add_geom clamps to MAX_GEOM, emits
+## geom_changed, and no-ops when !run_active — so this is a one-liner over the single owner.
+func _fx_geom_cache(params: Dictionary) -> void:
+	add_geom(float(params.get("amount", 40.0)))
+
+
+## Tungsten (#84 phase 5): GLOBAL armor-cracking buff — raises the LANCE hit-weight multiplier for the
+## REST of the run (not phase-scoped). LATCHES the highest mult seen (maxf) so re-claiming a weaker
+## Tungsten can't downgrade an already-stronger one; reset only happens in start_run. Fleet.hit_weight
+## folds this into the LANCE branch, which is what cracks Rhombus armor (weight is the only lever — no
+## per-bullet pierce count to bump).
+func _fx_tungsten(params: Dictionary) -> void:
+	lance_hit_weight_mult = maxf(lance_hit_weight_mult, float(params.get("mult", 1.5)))
+
+
+## Efficiency (#84 phase 6): the sustain-vs-burst tradeoff, PHASE-SCOPED (reset at the next boundary).
+## SET (not stacked) — claiming it again within the same phase just re-applies the same values. Lowers
+## the LANCE charge drain (StanceController reads geom_drain_mult) at the cost of LANCE/overdrive burst
+## damage (Fleet.hit_weight reads burst_damage_mult): play longer in LANCE, hit softer per bullet.
+func _fx_efficiency(params: Dictionary) -> void:
+	geom_drain_mult = float(params.get("drain_mult", 0.6))
+	burst_damage_mult = float(params.get("burst_mult", 0.75))
+
+
+## Phase boundary reached (#84 phase 6) — the "phase clear" for phase-scoped buffs. Discards the
+## (index, name, config) args; the reset is unconditional (a new phase always starts neutral).
+func _on_phase_changed(_index: int, _name: String, _config: Dictionary) -> void:
+	_reset_phase_buffs()
+
+
+## Reset the PHASE-SCOPED buff mults to neutral (#84 phase 6). Called on EVERY phase boundary and in
+## start_run. Deliberately does NOT touch lance_hit_weight_mult (Tungsten is global — whole-run).
+func _reset_phase_buffs() -> void:
+	geom_drain_mult = 1.0
+	burst_damage_mult = 1.0
 
 
 ## Set the stream stance (#79) — the SINGLE place stance mutates. Idempotent: a no-op
@@ -199,6 +289,8 @@ func start_run() -> void:
 	stance = START_STANCE                    # #79: every run starts in the wide SPRAY
 	geom_charge = 0.0                        # #87: fresh overdrive gauge each run
 	overdrive_active = false                 # #87: never start a run mid-overdrive
+	lance_hit_weight_mult = 1.0              # #84 ph5: Tungsten is GLOBAL — reset ONLY here, not per-phase
+	_reset_phase_buffs()                     # #84 ph6: neutral Efficiency mults for the run's first phase
 	combo = 0
 	combo_multiplier = 1.0
 	_combo_timer = 0.0

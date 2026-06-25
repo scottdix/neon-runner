@@ -20,8 +20,9 @@ extends Node
 ## KINETIC: |velocity_x| above this (px/s) counts as "moving" => SPRAY.
 const MOVE_EPS := 30.0
 ## KINETIC: time (s) the ship must stay sub-MOVE_EPS before it commits to LANCE (a brief brake, not
-## an instant flip on every micro-pause), per the POC 2 spec ("velocity.x == 0 for 0.2 seconds").
-const STILL_SECS := 0.2
+## an instant flip on every micro-pause). Device-tuned (like GEOM_DRAIN_PER_SEC) — dropped below the
+## POC 2 spec's 0.2 s so the brake-to-LANCE flip feels snappier on touch; keep in (0.10, 0.15].
+const STILL_SECS := 0.13
 ## GEOM: overdrive LANCE burn rate (charge/s). At MAX_GEOM 100 a full gauge sustains ~2.5 s of LANCE.
 const GEOM_DRAIN_PER_SEC := 40.0
 
@@ -94,7 +95,9 @@ func kinetic_stance(vx: float, still_secs: float) -> int:
 ## state (no overdrive) is plain SPRAY.
 func _step_geom(delta: float) -> void:
 	if GameState.overdrive_active:
-		GameState.drain_geom(GEOM_DRAIN_PER_SEC * delta)
+		# #84 ph6: an Efficiency gate scales the burn (geom_drain_mult < 1 = sustain longer). The base
+		# rate stays the const; the phase-scoped mult (1.0 = today, reset each boundary) folds in here.
+		GameState.drain_geom(GEOM_DRAIN_PER_SEC * GameState.geom_drain_mult * delta)
 		if GameState.geom_charge <= 0.0:
 			_exit_overdrive()
 	else:

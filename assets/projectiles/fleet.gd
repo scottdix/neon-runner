@@ -211,8 +211,28 @@ func set_stance(s: int) -> void:
 ## Per-bullet DAMAGE WEIGHT of one bullet in the current stance (#79). LANCE bullets hit
 ## heavy (clear the Rhombus FLOOR); SPRAY bullets are light. Targets multiplies the raw
 ## hit-COUNT it gets from consume_volumes by this to get damage (the count shape is unchanged).
+## The buff seam (#84 ph5/ph6): the LANCE branch — the heavy burst stance, and the one overdrive runs
+## in — scales by BOTH GameState buff mults: Tungsten (lance_hit_weight_mult, GLOBAL, latched, cracks
+## Rhombus armor since weight is the only cracking lever) AND Efficiency's burst tradeoff
+## (burst_damage_mult, PHASE-SCOPED). SPRAY is the wide light wall — UNAFFECTED by either buff, so a
+## no-buff run reproduces today's exact weights (both mults default 1.0 = the verify_combat invariant).
 func hit_weight() -> float:
-	return LANCE_HIT_WEIGHT if _stance == GameState.Stance.LANCE else SPRAY_HIT_WEIGHT
+	if _stance == GameState.Stance.LANCE:
+		return LANCE_HIT_WEIGHT * GameState.lance_hit_weight_mult * GameState.burst_damage_mult
+	return SPRAY_HIT_WEIGHT
+
+
+## Per-bullet ARMOR-CRACK WEIGHT — the weight that decides whether a bullet CLEARS the Rhombus per-hit
+## FLOOR (Targets._apply_damage), as distinct from the damage it deals. It folds in Tungsten (an
+## armor-cracking buff) but NOT Efficiency's burst tradeoff (burst_damage_mult): Efficiency lowers
+## damage-DEALT but must never strip LANCE's mandate as the armor-cracker, or an Efficiency-buffed
+## overdrive run could no longer break a Rhombus (6.0 * 0.75 = 4.5 < the 5.0 floor). SPRAY (1.0) stays
+## sub-floor exactly as today. So crack-eligibility tracks hit_weight() in every case EXCEPT the
+## Efficiency penalty, which is intentionally excluded here.
+func crack_weight() -> float:
+	if _stance == GameState.Stance.LANCE:
+		return LANCE_HIT_WEIGHT * GameState.lance_hit_weight_mult
+	return SPRAY_HIT_WEIGHT
 
 
 ## Whether bullets PIERCE in the current stance (#79). LANCE bullets pass through a volume

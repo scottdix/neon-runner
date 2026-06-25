@@ -50,6 +50,13 @@ signal enemy_multiplied(at: Vector2)
 ## longer reaches into GameState directly (CLAUDE.md decoupling). `new_count` is the
 ## gate's post-op count, already floored at 0; HUD/audio may also listen.
 signal gate_passed(gate_type: String, value: float, new_count: int)
+## A NON-ARITHMETIC gate fired (the dispatch seam, beyond the +/−/×/÷ math gates). A gate with
+## a non-empty `effect_id` emits THIS instead of gate_passed and does NO economy math; GameState
+## routes `effect_id` through a handler table (a Callable per id) so every state mutation stays
+## inside GameState (single-owner rule) and new effects are O(1) to add without touching gate_passed
+## or its count-semantics consumers. `params` is the effect's authored payload; `at` is the crossing
+## position for vfx. Unknown ids no-op (push_warning) so unshipped effects fail soft.
+signal gate_effect(effect_id: String, params: Dictionary, at: Vector2)
 signal gate_spawned(gate: Node2D)
 ## A HIJACKED gate reached the ship line with its occupant still alive, so the splice
 ## was DENIED (#53 cross-cutting: "enemy parks in a gate, must be killed to claim the

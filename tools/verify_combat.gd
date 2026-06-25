@@ -425,6 +425,109 @@ func _initialize() -> void:
 		lines.append("8d OK: a fat boss-sized collider is resolved by the volume math — exact, conserved, culled")
 	fl_boss.free()
 
+	# 9) #84 ph5 Tungsten — the GLOBAL armor-cracking buff (GameState.lance_hit_weight_mult). It scales
+	#    ONLY the LANCE branch of Fleet.hit_weight() (weight is the sole armor-crack lever — there is no
+	#    per-bullet pierce count). Two claims:
+	#      (a) hit_weight() rises with the buff in LANCE; SPRAY is untouched (it's the wide light wall).
+	#      (b) the heavier LANCE weight cracks/kills a Rhombus in FEWER hits than the baseline LANCE,
+	#          end-to-end through _apply_damage (tungsten = "crack faster").
+	lines.append("--- #84 ph5 Tungsten armor-crack buff ---")
+	gs.call("start_run")                                    # resets lance_hit_weight_mult -> 1.0 (baseline)
+
+	# 9a) hit_weight() is buff-scaled in LANCE only. Capture the baseline LANCE/SPRAY weights, raise the
+	#     Tungsten mult, and re-read: LANCE must rise by exactly the mult, SPRAY must NOT move at all.
+	var fl_w: Node2D = FleetS.new()
+	fl_w.call("set_stance", 1)                              # 1 == Stance.LANCE
+	var lance_base: float = fl_w.call("hit_weight")
+	fl_w.call("set_stance", 0)                              # 0 == Stance.SPRAY
+	var spray_base: float = fl_w.call("hit_weight")
+	var tung_mult := 2.0
+	gs.set("lance_hit_weight_mult", tung_mult)             # buff claimed (Tungsten ×2)
+	fl_w.call("set_stance", 1)
+	var lance_buffed: float = fl_w.call("hit_weight")
+	fl_w.call("set_stance", 0)
+	var spray_buffed: float = fl_w.call("hit_weight")
+	lines.append("9a tungsten weight: LANCE %.2f ->%.2f (×%.1f) | SPRAY %.2f ->%.2f (unchanged)" % [
+		lance_base, lance_buffed, tung_mult, spray_base, spray_buffed])
+	if lance_buffed <= lance_base:
+		lines.append("9a FAIL: Tungsten did not raise the LANCE hit weight"); ok = false
+	if absf(lance_buffed - lance_base * tung_mult) > 0.001:
+		lines.append("9a FAIL: LANCE weight did not scale by exactly the Tungsten mult"); ok = false
+	if absf(spray_buffed - spray_base) > 0.001:
+		lines.append("9a FAIL: Tungsten leaked into SPRAY (weight must be untouched)"); ok = false
+	if ok:
+		lines.append("9a OK: Tungsten lifts LANCE hit weight by its mult; SPRAY (light wall) unaffected")
+	fl_w.free()
+
+	# 9b) A buffed LANCE cracks a Rhombus in FEWER hits than the baseline LANCE — the tungsten "crack
+	#     faster" payoff, driven through the real _apply_damage path. Count single-bullet LANCE hits to
+	#     kill at baseline (mult 1.0), then with the buff (mult >1); the buffed count must be strictly
+	#     smaller. Both clear RHOMBUS_PER_HIT_FLOOR, so both crack — the buff only deepens each crack.
+	gs.set("lance_hit_weight_mult", 1.0)                   # baseline LANCE (no buff)
+	var rh_base: Dictionary = tg.call("_new_enemy", TargetsS.KIND_RHOMBUS, 0.0)
+	var base_hits := 0
+	var base_cap := 1000
+	while float(rh_base["hp"]) > 0.0 and base_hits < base_cap:
+		tg.call("_apply_damage", rh_base, 1, FleetS.LANCE_HIT_WEIGHT)
+		base_hits += 1
+	gs.set("lance_hit_weight_mult", tung_mult)             # Tungsten ×2 — the heavier crack
+	var rh_buff: Dictionary = tg.call("_new_enemy", TargetsS.KIND_RHOMBUS, 0.0)
+	var buff_weight: float = FleetS.LANCE_HIT_WEIGHT * tung_mult  # what Fleet.hit_weight() would feed
+	var buff_hits := 0
+	while float(rh_buff["hp"]) > 0.0 and buff_hits < base_cap:
+		tg.call("_apply_damage", rh_buff, 1, buff_weight)
+		buff_hits += 1
+	gs.set("lance_hit_weight_mult", 1.0)                   # restore neutral for any later check
+	lines.append("9b tungsten crack-speed: baseline LANCE kills rhombus in %d hits, buffed (×%.1f) in %d" % [
+		base_hits, tung_mult, buff_hits])
+	if base_hits >= base_cap or buff_hits >= base_cap:
+		lines.append("9b FAIL: a LANCE stream failed to crack the rhombus at all (floor not cleared)"); ok = false
+	if buff_hits >= base_hits:
+		lines.append("9b FAIL: Tungsten did not crack the rhombus FASTER than the baseline LANCE"); ok = false
+	if ok:
+		lines.append("9b OK: Tungsten cracks/kills a Rhombus in fewer LANCE hits — armor-crack buff lands")
+
+	# 9c) #84 ph6 Efficiency must NOT remove LANCE's ability to crack armor. Efficiency sets
+	#     burst_damage_mult = 0.75, which would drop the LANCE per-hit DAMAGE weight to 6.0*0.75 = 4.5,
+	#     BELOW RHOMBUS_PER_HIT_FLOOR (5.0). The fix decouples crack-eligibility (Fleet.crack_weight(),
+	#     Tungsten-aware but Efficiency-free) from damage-dealt (hit_weight()). This drives the real
+	#     batched path (Fleet.step + Targets.step) with Efficiency claimed and asserts a LANCE still
+	#     kills the Rhombus — the regression the old 9b (mult 2.0 only) never exercised.
+	lines.append("--- #84 ph6 Efficiency must not strip LANCE armor-crack ---")
+	gs.call("start_run")                                    # resets buff mults to neutral
+	gs.call("_fx_efficiency", {"drain_mult": 0.6, "burst_mult": 0.75})  # Efficiency claimed
+	var eff_crack: float = 0.0
+	gs.call("set_projectile_count", 200)
+	var fl_eff: Node2D = FleetS.new()
+	fl_eff.position = Vector2(540.0, 1680.0)
+	fl_eff.call("set_volume", 200)
+	fl_eff.call("set_stance", 1)                            # 1 == Stance.LANCE
+	eff_crack = float(fl_eff.call("crack_weight"))          # must stay >= the floor despite Efficiency
+	var eff_dmg: float = float(fl_eff.call("hit_weight"))   # damage-dealt IS lowered by Efficiency
+	var tg_eff: Node2D = TargetsS.new()
+	tg_eff.call("set_fleet", fl_eff)
+	var rh_eff: Dictionary = tg_eff.call("_new_enemy", TargetsS.KIND_RHOMBUS, 1450.0)
+	rh_eff["pos"] = Vector2(540.0, 1450.0); rh_eff["speed"] = 0.0
+	tg_eff.get("_enemies").append(rh_eff)
+	var eff_frames := 0
+	while tg_eff.get("_enemies").size() > 0 and eff_frames < 1200:
+		fl_eff.call("step", 1.0 / 60.0)
+		tg_eff.call("step", 1.0 / 60.0)
+		eff_frames += 1
+	lines.append("9c efficiency: crack_weight=%.2f (floor %.2f) hit_weight=%.2f dead_after=%d frames kills=%d" % [
+		eff_crack, TargetsS.RHOMBUS_PER_HIT_FLOOR, eff_dmg, eff_frames, tg_eff.get("kills")])
+	if eff_crack < TargetsS.RHOMBUS_PER_HIT_FLOOR:
+		lines.append("9c FAIL: Efficiency dropped LANCE crack_weight below the Rhombus floor"); ok = false
+	if eff_dmg >= FleetS.LANCE_HIT_WEIGHT:
+		lines.append("9c FAIL: Efficiency did not lower the LANCE damage weight (burst tradeoff missing)"); ok = false
+	if tg_eff.get("_enemies").size() > 0 or int(tg_eff.get("kills")) != 1:
+		lines.append("9c FAIL: an Efficiency-buffed LANCE could not crack/kill a Rhombus"); ok = false
+	if ok:
+		lines.append("9c OK: Efficiency lowers LANCE damage but LANCE still cracks Rhombus armor")
+	gs.call("_reset_phase_buffs")                           # restore neutral
+	fl_eff.free()
+	tg_eff.free()
+
 	tg.free()
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write(lines)

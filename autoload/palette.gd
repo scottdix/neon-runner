@@ -30,16 +30,25 @@ const SWARM_GOLD := Color(3.6, 2.9, 0.4, 1.0)
 ## Bigger white-hot impact spark (scaled by life at the call site).
 const SWARM_SPARK := Color(5.5, 5.0, 3.2, 1.0)
 
-# --- Entropy faction (enemies, hot rose) -------------------------------------
-## Faction base #ff007f. Per-archetype variants stay in the ROSE family (chosen
-## direction: "rose base, vary by shape/intensity") so the four read as one faction
-## but stay tellable apart by brightness — not by hue. Glitch = bright/pink, Rhombus =
-## deep/red-leaning (reads dangerous), Fractal = mid, Fractling = pale dim shard.
+# --- Entropy faction (enemies, danger band) ----------------------------------
+## Faction base #ff007f. Per-archetype variants are now DISTINCT BY HUE (reversing the
+## session-12 "one hue, vary by intensity" choice — #88: enemies were unreadable when only
+## luminance separated them). All four sit in the reserved RED→MAGENTA→VIOLET "danger" band
+## (gates avoid this band) and stay clearly OFF the gold swarm + cyan ship axes, but each
+## archetype owns a recognisable HUE: Glitch = hot pink/magenta-rose, Rhombus = deep crimson
+## (reads most dangerous), Fractal = violet/purple, Fractling = a pale dim shard of the violet.
 const ENEMY_ROSE := Color(3.9, 0.05, 1.95, 1.0)
-const ENEMY_GLITCH := Color(3.9, 0.18, 2.3, 1.0)
-const ENEMY_RHOMBUS := Color(3.9, 0.02, 1.0, 1.0)
-const ENEMY_FRACTAL := Color(3.7, 0.10, 1.9, 1.0)
-const ENEMY_FRACTLING := Color(3.2, 0.08, 1.7, 1.0)
+## Glitch — hot pink / magenta-rose (the bread-and-butter swarm target).
+const ENEMY_GLITCH := Color(3.9, 0.10, 2.4, 1.0)
+## Rhombus — deep crimson / red-leaning (the armored bruiser; reads most dangerous).
+const ENEMY_RHOMBUS := Color(3.9, 0.05, 0.6, 1.0)
+## Rhombus ARMORED CORE — near-white-hot crimson tint the armor tell blends toward, so a
+## still-armored Rhombus rim reads brighter/hotter than a cracked one (#88).
+const ENEMY_RHOMBUS_CORE := Color(5.4, 1.6, 1.9, 1.0)
+## Fractal — violet / purple, clearly distinct from the Glitch pink.
+const ENEMY_FRACTAL := Color(2.6, 0.06, 3.6, 1.0)
+## Fractling — a pale, dim shard of the Fractal violet.
+const ENEMY_FRACTLING := Color(1.9, 0.10, 2.6, 1.0)
 
 # --- Gates (3 distinct operator colours — explicit decision, see DESIGN_SPEC) -
 ## ×N multiply. magenta #ff2bd6 (kept distinct from +; collision-free now enemies
@@ -49,6 +58,24 @@ const GATE_MULTIPLY := Color(3.6, 0.6, 3.0, 1.0)
 const GATE_ADD := Color(0.8, 3.8, 0.3, 1.0)
 ## −/÷ negative + hazard. red #ff3333.
 const GATE_NEGATIVE := Color(3.8, 0.75, 0.75, 1.0)
+
+# --- Gate FAMILIES (#86 ring-frame system — 5 augment/effect families) --------
+## Per-family ring-frame HDR hues (the textured/additive path so the ring blooms).
+## EVERY family sits OUTSIDE the reserved enemy RED→MAGENTA→VIOLET danger band — they
+## live on the green / cyan / amber / teal / orange axes so a gate never reads as a
+## threat. MATH gates inherit a family from their op (Add/Mul → SPRAY_AUG green,
+## Sub/Div → LANCE_AUG cyan) so the existing ×/+/−/÷ look stays coherent.
+## SPRAY_AUG — acid green (same family as GATE_ADD: open-up / volume augments).
+const GATE_FAMILY_SPRAY := Color(0.8, 3.8, 0.3, 1.0)
+## LANCE_AUG — cyan (the ship-family HDR: focusing / converge augments).
+const GATE_FAMILY_LANCE := Color(0.1, 3.7, 3.9, 1.0)
+## GEOM — amber / gold (geometry charge; violet-free + clear of the enemy band).
+const GATE_FAMILY_GEOM := Color(3.7, 2.4, 0.25, 1.0)
+## UTILITY — teal / mint (universal utility caches; sits between green and cyan).
+const GATE_FAMILY_UTILITY := Color(0.25, 3.7, 2.6, 1.0)
+## DEVIL — orange, barbed (Overclock / high-risk; reserved). NEVER red or magenta so it
+## stays distinct from the GATE_NEGATIVE red and the enemy danger band.
+const GATE_FAMILY_DEVIL := Color(3.9, 1.7, 0.15, 1.0)
 
 # --- Shared neon -------------------------------------------------------------
 ## White-hot pulse for trigger flashes / impact pops (lerp target).

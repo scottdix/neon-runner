@@ -4,84 +4,88 @@ schema_version: 1
 # (notes + previous_notes); older history lives in git + docs/handoff/.
 last_updated:
   date: "2026-06-24"
-  session: 22
+  session: 23
   notes: >
+    Session 23 (ULTRACODE): imported the cloud ultraplan combat-redesign POC (built on Claude-Code-web,
+    no Godot there) via a git BUNDLE pulled over SSH from the MacBook Air -> review branch -> merged main;
+    fixed its one Variant-infer lint + added tools/playtest_poc.gd integration harness. SHIPPED build #17
+    (internal + external/Patrick) — the POC behind the Settings COMBAT (POC) selector (LEGACY/KINETIC/GEOM)
+    — with a BUILD-SPECIFIC "What to Test" (the static-notes problem fixed; memories saved:
+    ship-both-internal-external + testflight-what-to-test). DEVICE FEEDBACK on #17: Walled Gauntlet "feels
+    good, keep it"; NO stance verdict yet (all three need refinement — can't FEEL the difference because
+    enemies/gates too rough); wants "better gate choices + polished enemies". Ran a 4-agent TIGER TEAM
+    (combat-systems / visual-language / arcade-dopamine / mobile-feasibility) on 7 proposed gate concepts ->
+    synthesis + the GATE VISUAL LANGUAGE SYSTEM logged to #86/#88/#87 (bright-ring + dark negative-space
+    core; color+silhouette=FAMILY, glyph=specific, edge/motion=RISK; stance-ghosting; gates avoid the enemy
+    red/magenta band). PLANNED (Opus) then IMPLEMENTED the "make stance comparison FEELABLE" build via a
+    19-agent workflow (serial production code -> parallel verifies -> 4-lens adversarial review -> fix):
+    8 phases — (1) enemy readability (distinct per-archetype hues + Rhombus ENEMY_RHOMBUS_CORE armor tell +
+    punchier flash), (2) gate-effect DISPATCH SEAM (new Events.gate_effect + O(1) Callable table in GameState;
+    math gates via gate_passed untouched), (3) Geom Cache gate (new "fx" formation token), (4) phase-scoped
+    Efficiency (-drain/-burst, resets on phase_changed) + GLOBAL Tungsten (Lance-weight, resets on start_run)
+    through ONE fleet.hit_weight() seam — Tungsten reframed as weight-scaling NOT +1 pierce (bullets are a flat
+    Array[Vector2]), (5) 5-family gate ring-visuals + wrong-stance ghosting, (6) stance pool-filtering
+    (bias-not-drop off-allegiance), (7) STILL_SECS 0.2->0.13. ADVERSARIAL REVIEW caught 8 real bugs (2 blocker
+    verify-crashes; the pool-filter SPRAY-allegiance NO-OP — read GameState.stance right after start_run resets
+    it, now keyed off Settings.poc_mode; Efficiency dropping Lance below the 5.0 armor-crack floor -> split
+    crack_weight() from hit_weight()) — all fixed. VALIDATION (main loop, not trusting the workflow): --import
+    clean + 30/30 headless verifies PASS (+3 new: readability/gate_visual/gate_dispatch) + integration playtest
+    PASS. Code-complete + verified; NOT yet shipped (handoff before ship). Build #17 is the live TestFlight build.
+  previous_notes: >
     Session 22: device-tested the v0.5.0 build, shipped fix build #16 (TestFlight internal +
     external/Patrick), then PIVOTED to a combat/gate/stance DEPTH REDESIGN — research only, NO plan
-    locked (by the designer's call). Build #16 fixed the broken-on-device items from #15: boss now
-    PLAYABLE (HP bar + phase telegraph HUD; persistent Spray/Lance stance gates flanking the arena so
-    you can flip mid-fight; stance indicator on HUD; Singularity gravity WIRED into live gameplay — was
-    dead code, fixed the steer-overwrite + double-delta; boss moved to upper third + drift; HP 7000->4500);
-    grid scroll FLIPPED to top->bottom (forward motion); token magnetism is now a real attractive PULL;
-    perf overlay toggled via a persisted Settings switch (no keyboard on phone). Independent --import
+    locked. Build #16 fixed the broken-on-device items from #15: boss PLAYABLE (HP bar + phase telegraph;
+    persistent Spray/Lance stance gates flanking the arena; HUD stance indicator; Singularity gravity WIRED
+    into live gameplay — was dead code; boss to upper third + drift; HP 7000->4500); grid scroll FLIPPED
+    top->bottom; token magnetism a real PULL; perf overlay -> persisted Settings toggle. Independent --import
     clean + 25/25 verifies; added a verify_scene WIRING GUARD (fails if a boss/stance signal has no live
-    consumer — the gap that shipped the dead Singularity gravity). THEN: 3-lane research (Geometry Wars /
-    gate mechanics / bullet-hell feel) -> docs/design/REDESIGN_RESEARCH.md; a reusable design-brainstorm
-    prompt -> docs/design/STANCE_BRAINSTORM_PROMPT.md (asks an AI for multiple depth+dopamine options,
-    homage to Geometry Wars). Open questions FILED: #86 gate redesign (math gates bland), #87 stance
-    switching redesign (needs depth; two-lane gate REJECTED as too simplistic; divide-by disliked), #88
-    projectile bullet-hell richness, #85 boss HP-bar/stance-readout layout. KEY VERDICT: the current
-    Spray<->Lance + math-gate combat is too shallow/bland — needs a redesign, no direction chosen yet.
-  previous_notes: >
-    Session 21 (ULTRACODE — cleared the ENTIRE codeable half of v0.5.0 in two sequential multi-agent
-    workflows (~21 agents) + shipped build #15 to TestFlight, internal + external/Patrick both distributed).
-    Epic #84 CLOSED. WF-1 (spine, serial-correctness): contract reconciliation then serial build of #79
-    Spray<->Lance stance + Fusillade tax (Spray weight 1.0 / Lance 6.0, pierce) + Rhombus per-hit armor FLOOR
-    (5.0, immunity-not-slow-kill) + Fractal-feed-on-spray, #54 collision hardening (verify-only), #80
-    Easy/Med/Hard (new Difficulty autoload + DifficultyProfile, mode-scales the #79 chip: Easy 0.45 grind ->
-    Hard 0.0 true immunity). WF-2 (additive on verified spine): scaffold-surface -> parallel author -> serial
-    integrate -> adversarial review. Built #82 boss framework (assets/bosses/boss.gd, TELEGRAPH/ARMORED-Lance/
-    ADD_SWARM-Spray/DEFEATED, fat collider via consume_volumes, LevelDef.has_boss gates auto-complete), #83
-    Singularity first boss (gravity field wired live via Fleet.apply_gravity_bias + run._apply_boss_gravity),
-    #78 Splice Lab economy (token drops/drift/absorb/magnetism + RNG perk draft folded into SpliceLab: offer-N/
-    pick-1/SKIP/escalating-reroll/Brotato-lock/seeded-RNG, earned-only wallet, shop UI on #68 screen), #59
-    phase director (distance-keyed Matrix/Quickening/Singularity/Overdrive, emit-only), #38 cull + #35 perf
-    overlay. ADVERSARIAL REVIEW caught + fixed 5 blocker/major bugs pre-ship (boss arming race; Singularity
-    gravity shipping as DEAD CODE; reroll no-op charging tokens + unreachable perks; misleading cull claims).
-    VALIDATION: independent --import clean + 25/25 headless verifies PASS (re-run in main loop, not just
-    trusting the workflow). SHIPPED: export 14->15, Godot iOS export (exit 1 expected), fastlane ios ship ->
-    #15 VALID ~180s, beta_submit build:15 -> external distributed. CLOSED #79/#80/#82/#83/#78/#59/#38/#35/#84.
-    KEPT OPEN (code done, device-blocked): #54/#39/#37/#36 + epic #34. NO device validation possible on the
-    mini (bloom/FPS/feel) — build #15 on a real iPhone is the surface.
+    consumer). THEN 3-lane research (Geometry Wars / gate mechanics / bullet-hell feel) ->
+    docs/design/REDESIGN_RESEARCH.md + a reusable docs/design/STANCE_BRAINSTORM_PROMPT.md. FILED #86 (gate
+    redesign — math gates bland), #87 (stance switching redesign — two-lane gate REJECTED, divide-by disliked),
+    #88 (projectile richness), #85 (boss HP-bar layout). KEY VERDICT: Spray<->Lance + math-gate combat too
+    shallow/bland — needs redesign, no direction chosen yet.
 
 # =============================================================================
 # FOCUS — one milestone, one issue at a time
 # =============================================================================
 focus:
   active_milestone: "v0.5.0 - Complete Game"
-  active_epic: "Combat/gate/stance DEPTH REDESIGN (#86 gate redesign, #87 stance switching, #88 projectile richness) — research done, NO plan locked. Separately: device-gated perf cluster #54/#39/#37/#36 under epic #34 still open."
-  current_issue: "Resolve the stance + gate redesign (#87 + #86). The current Spray<->Lance + math-gate combat is judged too shallow/bland; divide-by->Lance is disliked; the simple two-lane stance gate was REJECTED as too simplistic. NEXT STEP: run docs/design/STANCE_BRAINSTORM_PROMPT.md to generate multiple depth+dopamine design options (homage to Geometry Wars), compare, and LOCK a direction. Inputs: docs/design/REDESIGN_RESEARCH.md (3-lane research) + GATE_ECONOMY.md (prior design being revised). NO plan exists yet — designing the direction IS the task."
-  next_issue: "#88 projectile bullet-hell richness (cheap, high-impact visible win that also makes stance readable — MultiMesh per-instance custom data + shader). Quick deferred fix: move perf overlay to BOTTOM-RIGHT (#35, top too crowded). #85 boss HP-bar/stance-readout layout. Then the device-gated perf cluster #54/#39/#37/#36 + boss balance (dies too fast in Lance, battery per flip). #81 twin-stick stays ICEBOX/V2."
+  active_epic: "Combat/gate/stance DEPTH REDESIGN. The 'make the stance comparison FEELABLE' build (#86 gate visual system + 4 gates + #88 enemy readability) is CODE-COMPLETE + 30/30 verified on the mini, NOT yet shipped. DEPENDENCY FLIP: #87 (lock stance) is BLOCKED on device feedback for #86+#88. Walled Gauntlet VALIDATED (keep). Separately: device-gated perf cluster #54/#39/#37/#36 under epic #34 still open."
+  current_issue: "Ship build #18 + device-test the new combat surface, then LOCK the stance direction (#87). DEPLOY: bump export_presets.cfg 17->18, Godot iOS export (exit 1 expected), fastlane ios ship -> status VALID -> beta_submit build:18 version:0.1.0 for external; ship to BOTH testers with a BUILD-SPECIFIC 'What to Test' (memories: ship-both-internal-external + testflight-what-to-test). What-to-Test focus: enemy archetype hues (Glitch pink / Rhombus crimson+core / Fractal violet), 5 gate FAMILY rings + wrong-stance ghosting, Geom Cache (instant charge), Tungsten (Lance bites harder), Efficiency (sustain-vs-burst tradeoff), 0.13s brake feel. ON DEVICE judge: do the hues + family rings read at speed under bloom; is Tungsten/Efficiency dramatic; KINETIC vs GEOM verdict (#87). All glow/legibility/feel is iPhone-only."
+  next_issue: "After the device read on #18: LOCK #87 (KINETIC vs GEOM vs hybrid). Then the NEXT build: Overclock Devil's-Bargain gate (rework '1 HP one-shot' -> drain-toward-1 + cancellable + can't self-kill; REUSES the phase-buff seam built this session; only loss channel = highest blast radius) + per-gate dark-core GLYPHS (the near-read layer, deferred from the visual MVP). PARKED new gate ideas: Avalanche (escalating-greed), Ironclad (Lance one-shots Rhombus/Spray=0), Phoenix (comeback), Threadneedle (graze), Mortgage (sacrifice->payoff). CUT (do not revive without cause): Hair-Trigger, Ricochet, Harvester. Quick deferred fix: perf overlay -> BOTTOM-RIGHT (#35). #85 boss HP-bar layout. Device-gated perf cluster #54/#39/#37/#36 + boss balance. #81 twin-stick stays ICEBOX/V2."
   notes: >
-    Session 22: shipped fix build #16 (TestFlight internal + external/Patrick) then PIVOTED to a combat
-    DEPTH REDESIGN (research only, no plan — designer's call). #16 made the boss PLAYABLE (HP bar + phase
-    telegraph HUD; persistent Spray/Lance stance gates flanking the arena; HUD stance indicator; Singularity
-    gravity WIRED into live gameplay — was dead code; boss to upper third + drift; HP 7000->4500), FLIPPED
-    the grid scroll to top->bottom, made token magnetism a real PULL, moved perf overlay to a persisted
-    Settings toggle. Independent --import clean + 25/25 verifies + a NEW verify_scene WIRING GUARD (fails if
-    a boss/stance signal has no live consumer — the gap that shipped the dead gravity). Then 3-lane research
-    (Geometry Wars / gate mechanics / bullet-hell feel) -> docs/design/REDESIGN_RESEARCH.md + a reusable
-    docs/design/STANCE_BRAINSTORM_PROMPT.md. Filed #86 (gate redesign), #87 (stance redesign), #88 (projectile
-    richness), #85 (boss HP-bar layout).
-    KEY SURFACE (build #16, still current): boss HUD + stance gates + stance indicator + _apply_boss_gravity
-    in run.gd; grid scroll sign in grid_floor.gd _on_distance_changed; token attraction in token_layer.gd;
-    Settings.perf_overlay_enabled + Events.perf_overlay_changed; verify_scene wiring guard. Prior session-21
-    surface still in force: Difficulty autoload, GameState Stance enum + Events.stance_changed,
-    Fleet.hit_weight()/is_piercing()/apply_gravity_bias(), Targets RHOMBUS_PER_HIT_FLOOR=5.0, SpliceLab draft,
-    phase_director.gd, perf files. 25 headless verifies total.
-    GOTCHAS still in force: a Node add_child()ed during a verify _initialize() has _ready DEFERRED under `-s`
-    (pump await process_frame before asserting — see verify_gamefeel); a bare `Events` won't compile in the
-    `-s` MAIN tool script (use root.get_node_or_null("Events")); GDScript const-arithmetic on a loaded
-    GDScript's consts needs an explicit type (`var x: float = float(AudioS.CONST)/...`) or type-infer fails.
-    Verify result FILES are hardcoded to /tmp/verify_<name>_result.txt — pass that exact path to run-headless.sh
-    or it polls the wrong file and reports a false NO-RESULT.
-    DEPLOY unchanged + proven: bump export_presets version -> Godot iOS export (exit 1 EXPECTED) -> fastlane
-    ios ship (self-unlocks keychain via NEON_KEYCHAIN_PW) -> status until VALID -> beta_submit build:N
-    version:0.1.0 for external. Re-ship if a build is invisible >25 min (Apple ingestion stall).
-    DEVICE BACKLOG (gated on a real iPhone — now the ONLY remaining v0.5.0 work): on build #15, tune the
-    session-21 combat/economy FEEL (stance flips, Rhombus-floor vs Lance, boss arm/gravity, perk draft, phase
-    crescendo) + beat-pulse/shake/flash/audio/haptic; confirm #76 notch fix; glow/fonts/real-FPS only provable
-    on iPhone; the open #34 perf cluster (#54/#39/#37/#36) closes with on-device numbers; polish #77.
+    Session 23 (ULTRACODE): shipped POC build #17 (live TestFlight build) then ran a tiger team + a 19-agent
+    workflow to build the 'make the stance comparison FEELABLE' build — CODE-COMPLETE + 30/30 verified, NOT
+    shipped (handoff first). Next session = ship #18 + device-test + lock #87. See last_updated.notes for the
+    full session story.
+    NEW SURFACE (session 23, uncommitted->committed this handoff): Events.gate_effect(id,params,at) — the
+    generalized gate path; GameState._gate_effects Callable table + _on_gate_effect dispatcher + _fx_geom_cache/
+    _fx_tungsten/_fx_efficiency handlers; GameState phase-scoped buffs geom_drain_mult/burst_damage_mult (reset
+    on Events.phase_changed via _on_phase_changed/_reset_phase_buffs) + GLOBAL lance_hit_weight_mult (reset in
+    start_run only); fleet.hit_weight() scales LANCE by lance_hit_weight_mult*burst_damage_mult, NEW
+    fleet.crack_weight() (LANCE*Tungsten WITHOUT Efficiency) so armor-crack eligibility stays >= the 5.0 floor;
+    Targets._apply_damage takes crack_weight separately; gate.gd Family enum + family field + _family_color/
+    family ring textures + set_ghosted(); gate_spawner _stance_pool_filter/_allegiance_for_poc (allegiance from
+    Settings.poc_mode NOT GameState.stance) + "fx" formation token via _configure_side; palette ENEMY_* distinct
+    hues + ENEMY_RHOMBUS_CORE + GATE_FAMILY_* ; STILL_SECS=0.13. NEW verifies: verify_readability/gate_visual/
+    gate_dispatch (30 total). tools/playtest_poc.gd is the integration harness.
+    GOTCHAS still in force (all re-confirmed this session): a Node add_child()ed during a verify _initialize()
+    has _ready DEFERRED under `-s` (await process_frame before asserting); a bare `Events`/`GameState`/`Settings`
+    won't compile in the `-s` MAIN tool script (use root.get_node(...)); use runtime load() not top-level const
+    preload() for scripts that reference autoload globals; any `var x := <Variant expr>` (Dict lookup/.call()/
+    .get()) is a warning-treated-as-ERROR — type it explicitly; String(Color) is invalid (use str()); root has
+    no get_root() (use root directly). Verify result FILES are hardcoded /tmp/verify_<name>_result.txt — pass
+    that exact path to run-headless.sh. ALWAYS re-run --import + the verify sweep in the MAIN loop, never trust
+    the workflow's self-checks (the adversarial review's per-agent --import missed 8 bugs incl 2 blocker
+    verify-crashes + a feature no-op).
+    DEPLOY unchanged + proven: bump export_presets version (17->18 next) -> Godot iOS export (exit 1 EXPECTED) ->
+    fastlane ios ship (self-unlocks keychain via NEON_KEYCHAIN_PW) -> status until VALID -> beta_submit build:N
+    version:0.1.0 for external. ALWAYS set a build-specific What-to-Test (whatsnew:) and ship to BOTH testers.
+    Re-ship if a build is invisible >25 min (Apple ingestion stall).
+    DEVICE BACKLOG (iPhone-only): the WHOLE session-23 build (enemy hues / gate family rings / ghosting / Tungsten
+    / Efficiency / 0.13 brake) — does it read at speed under bloom + is the stance comparison feelable (the #87
+    decision); plus session-21 FEEL (stance flips, boss arm/gravity, perk draft, phase crescendo), #76 notch,
+    glow/fonts/real-FPS, the #34 perf cluster (#54/#39/#37/#36), #77.
     OPS: rotate the keychain password; remove Xcode-16.4.0.app (rollback condition long met).
 
 # =============================================================================

@@ -50,7 +50,7 @@ const RHOMBUS_PER_HIT_FLOOR := 5.0
 ## per-hit floor so a harder mode demands an even heavier bullet to crack armor.
 var armor_floor_mult: float = 1.0
 const CONSUME_PAD := 10.0           # collision radius = visible half-size + this
-const FLASH_DECAY := 0.08           # seconds an impact flash-pulse lasts
+const FLASH_DECAY := 0.06           # seconds an impact flash-pulse lasts (shortened for a snappier per-hit pop, #88)
 const BURST_LIFE := 0.30            # seconds a death burst lives
 
 ## A Fractal hit while the swarm volume is below this "tier" splits instead of dying.
@@ -248,10 +248,15 @@ func step(delta: float) -> void:
 		# Per-hit damage WEIGHT + pierce flag of the current stance (#79), fetched ONCE per
 		# frame. Null-safe: a bare unit-test Targets with no fleet falls back to SPRAY (1.0).
 		var hw: float = float(_fleet.call("hit_weight")) if _fleet.has_method("hit_weight") else 1.0
+		# Armor-crack eligibility uses a SEPARATE weight (#79 Efficiency fix): Efficiency lowers
+		# damage-dealt (hit_weight) but must NOT strip LANCE's ability to crack a Rhombus, so the
+		# crack threshold is tested against crack_weight() (LANCE × Tungsten, WITHOUT the Efficiency
+		# burst penalty). Falls back to hit_weight, then to SPRAY 1.0, for an older/bare fleet.
+		var cw: float = float(_fleet.call("crack_weight")) if _fleet.has_method("crack_weight") else hw
 		var pierce: bool = bool(_fleet.call("is_piercing")) if _fleet.has_method("is_piercing") else false
 		for i in _enemies.size():
 			if hits[i] > 0:
-				_apply_damage(_enemies[i], hits[i], hw, pierce)
+				_apply_damage(_enemies[i], hits[i], hw, pierce, cw)
 
 	# (2) Movement + lifecycle. Rebuild the live set: survivors are kept, dead/breached/
 	# offscreen are dropped (finite — no respawn), Fractal splits + multiply-through clones
@@ -325,13 +330,20 @@ func _hit_radius(e: Dictionary) -> float:
 ##     makes this mode-scaled, and a chip fraction of 0 == TRUE immunity). So a thin/light stream
 ##     can't crack armor by sheer count — you must focus into a LANCE — while a sustained SPRAY
 ##     still eventually grinds it down (no permanent lockout, #74).
-## Defaulted args so verify_combat's existing direct _apply_damage(e, hits) calls still pass.
-func _apply_damage(e: Dictionary, hits: int, hit_weight: float = 1.0, _pierce: bool = false) -> void:
+## `crack_weight` is the weight that decides ARMOR-CRACK eligibility, kept SEPARATE from `hit_weight`
+## (the damage-dealt weight) so Efficiency's burst tradeoff (#84 ph6) — which lowers hit_weight to 4.5,
+## below the 5.0 floor — cannot strip LANCE's mandate as the armor-cracker. It defaults to -1.0, a
+## sentinel meaning "use hit_weight" so verify_combat's existing direct _apply_damage(e, hits[, w]) calls
+## behave EXACTLY as before. Defaulted args so those direct calls still pass.
+func _apply_damage(e: Dictionary, hits: int, hit_weight: float = 1.0, _pierce: bool = false, crack_weight: float = -1.0) -> void:
 	if hits <= 0:
 		return
 	var armor: int = int(e.get("armor", 0))
-	var per_hit: float = hit_weight                          # damage weight of ONE bullet
-	if armor > 0 and per_hit < RHOMBUS_PER_HIT_FLOOR * armor_floor_mult:
+	var per_hit: float = hit_weight                          # damage weight of ONE bullet (damage DEALT)
+	# Crack eligibility tests the SEPARATE crack weight (Efficiency-free); fall back to hit_weight when
+	# the caller didn't supply one (sentinel < 0), preserving the legacy single-weight behaviour.
+	var crack_per_hit: float = crack_weight if crack_weight >= 0.0 else hit_weight
+	if armor > 0 and crack_per_hit < RHOMBUS_PER_HIT_FLOOR * armor_floor_mult:
 		# Sub-threshold on an armored enemy: chip grind (no crack). chip_fraction == 0 (Hard,
 		# #80) makes this a true 0 — full immunity until the player switches to a LANCE.
 		e["hp"] = float(e["hp"]) - _armor_chip_fraction() * DAMAGE_PER_BULLET
@@ -556,11 +568,19 @@ func _render() -> void:
 		var frac: float = clampf(float(e["hp"]) / float(e["max_hp"]), 0.0, 1.0)
 		# Quad scale = archetype size relative to the base quad, eroding with HP.
 		var s: float = (float(e["size"]) / BASE_QUAD) * (0.62 + 0.38 * frac)
-		mm.set_instance_transform_2d(i, Transform2D(Vector2(s, 0), Vector2(0, s), p - position))
 		var col: Color = _enemy_color(e)
+		# Armor tell (#88): a still-armored enemy blends toward the white-hot crimson core
+		# and reads physically THICKER (bumped scale) so the rim looks plated. Per-instance
+		# colour/scale only — no extra draw call, no second MultiMesh.
+		var armor: int = int(e.get("armor", 0))
+		if armor > 0:
+			var a_w: float = clampf(0.18 * float(armor), 0.0, 0.6)  # armor-scaled blend toward the core
+			col = col.lerp(Palette.ENEMY_RHOMBUS_CORE, a_w)
+			s *= 1.0 + 0.06 * float(armor)                          # thicker rim while armored
+		mm.set_instance_transform_2d(i, Transform2D(Vector2(s, 0), Vector2(0, s), p - position))
 		var fl: float = float(e["flash"])
 		if fl > 0.0:
-			col = col.lerp(Palette.FLASH_WHITE, fl * 0.8)  # per-impact pulse
+			col = col.lerp(Palette.FLASH_WHITE, fl)  # per-impact pulse (punched up to full weight, #88)
 		mm.set_instance_color(i, col)
 	# Death bursts: a white-hot diamond (tinted by the kind) that expands and fades.
 	for j in b_n:

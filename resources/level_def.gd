@@ -58,7 +58,11 @@ const PHASE_DEF := preload("res://resources/phase_def.gd")
 	# Back half (run length doubled to 640 m): the escalation continues so the extended
 	# run stays populated instead of coasting to an empty finish.
 	{"m": 315.0, "l": ["mul", 2.0],  "r": ["add", 10.0]},
-	{"m": 365.0, "l": ["add", 20.0], "r": ["sub", 8.0]},
+	# Geom Cache split (phase 4): grow the fleet (+20) OR bank a slug of Geom charge for the LANCE
+	# overdrive. Seated next to the m=330 Fractal wave so the cache pays off against the wave you steer
+	# into. An "fx" side spec is `["fx", {effect, params, family}]` (GateSpawner._configure_side routes
+	# it to configure_effect → gate_effect → GameState._fx_geom_cache, which add_geoms `amount`).
+	{"m": 365.0, "l": ["add", 20.0], "r": ["fx", {"effect": "geom_cache", "params": {"amount": 40.0}, "family": 2}]},  # family 2 == Gate.Family.GEOM (universal: amber ring, never ghosted/pool-filtered)
 	{"m": 415.0, "l": ["mul", 3.0],  "r": ["div", 2.0], "hijack": "r"},
 	{"m": 465.0, "l": ["div", 2.0],  "r": ["mul", 2.0]},
 	{"m": 515.0, "l": ["add", 30.0], "r": ["mul", 3.0]},

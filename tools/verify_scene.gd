@@ -90,8 +90,12 @@ func _process(_delta: float) -> bool:
 		# #86/#87 added the combat-POC signals; assert the run scene wires each (lane_clamp_changed ->
 		# Player, overdrive_toggle_requested -> StanceController, overdrive_changed + geom_changed -> run.gd)
 		# so the same "verified-but-dead" class the dead Singularity gravity shipped as can't pass again.
+		# gate_effect (the non-arithmetic gate dispatch seam) is consumed by the GameState autoload in
+		# wire_events (Events.gate_effect -> _on_gate_effect); _initialize calls wire_events up front, so
+		# the live-autoload connection list below sees it — guard it too so the seam can't ship dead.
 		for sig in ["boss_spawned", "boss_phase_changed", "stance_changed",
-				"lane_clamp_changed", "overdrive_toggle_requested", "overdrive_changed", "geom_changed"]:
+				"lane_clamp_changed", "overdrive_toggle_requested", "overdrive_changed", "geom_changed",
+				"gate_effect"]:
 			var conns: int = ev.get_signal_connection_list(sig).size()
 			_lines.append("wiring: Events.%s connections=%d" % [sig, conns])
 			if conns <= 0:

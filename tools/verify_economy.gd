@@ -356,6 +356,95 @@ func _initialize() -> void:
 	lab.set("tokens", 0)
 	lab.call("skip")
 
+	# --- 5) Gate-effect SEAM regression: the dispatch refactor must NOT change math-gate
+	#        behaviour, and an "fx"-typed gate built by the spawner must grant its EFFECT
+	#        (geom charge) rather than touching the projectile economy. -------------------
+	# The seam splits the old single gate_passed path in two: math gates still emit gate_passed
+	# (GameState mutates projectile_count + drains battery on −/÷), while a non-arithmetic gate emits
+	# gate_effect (routed through GameState's _gate_effects handler table — NO economy math). These
+	# checks pin BOTH halves so the refactor can't silently regress either, driving the REAL signals
+	# (gate_passed / gate_effect) and the REAL spawner build path, not hand-set state.
+	lines.append("--- #seam gate-effect dispatch regression ---")
+	gs.call("wire_events")                          # idempotent — builds the _gate_effects table
+
+	var GateS: GDScript = load("res://assets/gates/gate.gd")
+	var SpawnerS: GDScript = load("res://assets/gates/gate_spawner.gd")
+	if GateS == null or SpawnerS == null:
+		lines.append("seam FAIL: gate / gate_spawner script missing"); ok = false
+		lines.append("RESULT=%s" % ("PASS" if ok else "FAIL")); _write(lines); return
+
+	# 5a) A POSITIVE math gate via gate_passed STILL sets projectile_count to its post-op count and
+	#     does NOT drain the battery (the +/× side of the Split Choice is unchanged by the seam).
+	gs.call("start_run")                            # battery -> 100, projectile_count -> START_PROJECTILES
+	var pos_bat0: float = float(gs.get("glow_battery"))
+	# Emit the math signal directly (what Gate.trigger does for a math gate): new_count is the gate's
+	# already-applied, floored-at-0 post-op count. GameState commits it via set_projectile_count.
+	ev.call("emit_signal", "gate_passed", "multiply", 2.0, 240)
+	lines.append("5a math+: projectile_count=%d (want 240) battery %.0f->%.0f (want unchanged)" % [
+		int(gs.get("projectile_count")), pos_bat0, float(gs.get("glow_battery"))])
+	if int(gs.get("projectile_count")) != 240:
+		lines.append("5a FAIL: a positive gate_passed did not commit its new_count to projectile_count"); ok = false
+	if absf(float(gs.get("glow_battery")) - pos_bat0) > 0.001:
+		lines.append("5a FAIL: a POSITIVE gate drained the battery (only −/÷ should)"); ok = false
+	if ok:
+		lines.append("5a OK: positive gate_passed still sets projectile_count, no battery drain")
+
+	# 5b) A NEGATIVE (divide) math gate via gate_passed STILL thins the swarm to its post-op count AND
+	#     drains the Glow Battery by exactly DRAIN_PER_NEGATIVE_GATE × the active difficulty drain_mult
+	#     (GameState._on_gate_passed's formula — read it the same way so this is mode-agnostic).
+	# DRAIN_PER_NEGATIVE_GATE is a const on the GameState script (not a member var, so get() can't
+	# read it) — load the script and read the const off it. Mirror GameState's own formula exactly.
+	var GameStateS: GDScript = load("res://autoload/game_state.gd")
+	var drain_const: float = float(GameStateS.DRAIN_PER_NEGATIVE_GATE)
+	var drain_each: float = drain_const * float(root.get_node("Difficulty").call("drain_mult"))
+	var neg_bat0: float = float(gs.get("glow_battery"))
+	ev.call("emit_signal", "gate_passed", "divide", 2.0, 120)
+	var neg_bat1: float = float(gs.get("glow_battery"))
+	lines.append("5b math÷: projectile_count=%d (want 120) battery %.1f->%.1f drain=%.1f (want %.1f)" % [
+		int(gs.get("projectile_count")), neg_bat0, neg_bat1, neg_bat0 - neg_bat1, drain_each])
+	if int(gs.get("projectile_count")) != 120:
+		lines.append("5b FAIL: a negative gate_passed did not commit its new_count to projectile_count"); ok = false
+	if absf((neg_bat0 - neg_bat1) - drain_each) > 0.01:
+		lines.append("5b FAIL: a negative gate did not drain exactly DRAIN_PER_NEGATIVE_GATE × drain_mult"); ok = false
+	if ok:
+		lines.append("5b OK: negative gate_passed thins the swarm AND drains the battery as before")
+
+	# 5c) An "fx"-typed gate BUILT BY THE SPAWNER grants its effect (geom charge) and does NOT change
+	#     the projectile economy. Drive the REAL build path: a formation whose chosen side is an
+	#     ["fx", {effect:"geom_cache", params:{amount}}] spec, steered through + scrolled past the line
+	#     so the spawner's update() fires gate.trigger() -> Events.gate_effect -> _fx_geom_cache.
+	gs.call("start_run")                            # fresh run: geom_charge 0, run_active (add_geom no-ops otherwise)
+	var fx_count0: int = int(gs.get("projectile_count"))
+	var fx_bat0: float = float(gs.get("glow_battery"))
+	var fx_geom0: float = float(gs.get("geom_charge"))
+	var sp: Node2D = SpawnerS.new()
+	sp.call("setup", 1680.0)
+	# Left side = the fx gate (Geom Cache, +35 charge); right side = a harmless math gate we WON'T take.
+	# GEOM family (2) tags it as the universal geom family. The left gate slots into [0, 540), so we
+	# steer to x=280 (LEFT_CENTER) to take it.
+	sp.call("build_formations", [
+		{"m": 30.0,
+		 "l": ["fx", {"effect": "geom_cache", "params": {"amount": 35.0}, "family": 2}],
+		 "r": ["add", 5.0]},
+	])
+	# Scroll the @30m formation well past the ship line with the ship steered onto the fx (left) side,
+	# so update() crosses it once and fires gate.trigger() on the fx gate (effect_id != "" -> gate_effect).
+	sp.call("update", 200.0, 280.0)
+	lines.append("5c fx-gate: geom %.0f->%.0f (want +35) count %d->%d (want unchanged) battery %.0f->%.0f triggers=%d" % [
+		fx_geom0, float(gs.get("geom_charge")), fx_count0, int(gs.get("projectile_count")),
+		fx_bat0, float(gs.get("glow_battery")), int(sp.get("triggers"))])
+	if int(sp.get("triggers")) != 1:
+		lines.append("5c FAIL: the spawner did not fire the crossed fx formation exactly once"); ok = false
+	if absf(float(gs.get("geom_charge")) - (fx_geom0 + 35.0)) > 0.01:
+		lines.append("5c FAIL: an fx geom_cache gate did not grant its geom charge via the dispatch seam"); ok = false
+	if int(gs.get("projectile_count")) != fx_count0:
+		lines.append("5c FAIL: an fx gate changed projectile_count (it must do NO economy math)"); ok = false
+	if absf(float(gs.get("glow_battery")) - fx_bat0) > 0.001:
+		lines.append("5c FAIL: an fx gate drained the battery (it must do NO economy math)"); ok = false
+	if ok:
+		lines.append("5c OK: a spawner-built fx gate grants its effect (geom) and leaves the economy untouched")
+	sp.free()
+
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write(lines)
 

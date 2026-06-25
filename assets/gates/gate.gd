@@ -13,6 +13,13 @@ extends Node2D
 
 enum Operation { ADD, SUBTRACT, MULTIPLY, DIVIDE }
 
+## Gate FAMILY taxonomy (#86). Each family owns a distinct ring-frame SILHOUETTE + HDR hue
+## (see Palette.GATE_FAMILY_*), all outside the enemy danger band. SPRAY_AUG/LANCE_AUG cover the
+## math gates (Add/Mul → SPRAY_AUG, Sub/Div → LANCE_AUG, derived in _family_for_op); GEOM + UTILITY
+## are UNIVERSAL (never ghosted); DEVIL is the reserved high-risk Overclock family (orange + barbed).
+## SPRAY_AUG == 0 so a bare `.new()` / math gate's default `family` reads as SPRAY_AUG before configure.
+enum Family { SPRAY_AUG, LANCE_AUG, GEOM, UTILITY, DEVIL }
+
 
 ## Map an authored op string (LevelDef schedule, #13) to an Operation. Keeps LevelDef
 ## free of any dependency on this enum — the data stays plain strings. Unknown → ADD.
@@ -26,14 +33,36 @@ static func op_from_string(s: String) -> int:
 
 const BOX := Vector2(440.0, 150.0)          # visible panel size
 
-# HDR polarity colours now live in Palette (×=magenta, +=acid green, negative=red);
-# referenced at runtime in _polarity_color() / trigger().
+# HDR colours live in Palette: trigger() flashes FLASH_WHITE; the resting ring hue comes from the
+# FAMILY (Palette.GATE_FAMILY_*) via _family_color(), keyed off `family` in _ready().
 
 var operation: int = Operation.MULTIPLY
 var value: float = 2.0
 var span_min: float = 0.0                   # horizontal trigger span (canvas x)
 var span_max: float = 540.0
 var has_been_triggered: bool = false
+
+## Non-arithmetic gate effect (the dispatch seam). When `effect_id` is non-empty this gate is NOT a
+## math gate: trigger() emits Events.gate_effect (GameState routes it through its handler table) and
+## skips ALL economy math — no apply(), no gate_passed, no battery drain. `effect_params` is the
+## authored payload handed to the effect handler. Empty `effect_id` (the default) keeps the today's
+## pure-math path, so existing gates + headless tests are unaffected.
+var effect_id: String = ""
+var effect_params: Dictionary = {}
+
+## Gate FAMILY (a `Family` enum value, default SPRAY_AUG == 0). Tags an effect gate with its category
+## so visuals/telegraphs can colour it without re-deriving from effect_id. Set via configure_effect for
+## effect gates; for MATH gates _ready derives it from the op (_family_for_op) so they stay coherent.
+var family: int = Family.SPRAY_AUG
+
+## STANCE-BASED POOL FILTERING (#88). When the GateSpawner builds a run around a stance allegiance, an
+## off-allegiance gate that falls OUTSIDE the bias cap is flagged here (a STICKY pool-filter mark, set
+## once at build time). The spawner's per-frame ghosting ORs this in, so a pool-filtered gate stays
+## dimmed for the WHOLE run regardless of the live stance — unlike the per-frame wrong-stance dim, which
+## relights the moment the live stance matches. Appearance only: a flagged gate still trigger()s if the
+## ship steers through it (filtering decides look, not which side fires). Default off — bare gates/tests
+## are unaffected.
+var pool_filtered: bool = false
 
 ## Gate-hijack (#53). When `hijacked`, an Entropy enemy is parked on this gate and the
 ## splice is DENIED until that occupant is destroyed (`hijack_cleared`). GateSpawner
@@ -46,6 +75,10 @@ var hijack_id: int = -1
 
 var _panel: Sprite2D
 var _label: Label
+## Wrong-stance GHOSTING (#86): true while this gate's family mismatches GameState.stance, so the
+## spawner can dim it without changing which gate trigger()s. Pure appearance; the setter restores the
+## family hue when cleared. The trigger FLASH_WHITE must win on the trigger frame — see set_ghosted.
+var _ghosted: bool = false
 
 
 ## Define this gate's op/value and its horizontal slot. `center_x` is where the
@@ -56,6 +89,16 @@ func configure(op: int, val: float, smin: float, smax: float, center_x: float) -
 	span_min = smin
 	span_max = smax
 	position.x = center_x
+
+
+## Define this gate as a NON-arithmetic EFFECT gate (the dispatch seam): set `effect_id` (non-empty)
+## so trigger() routes to GameState.gate_effect instead of the math path, stash the authored `params`
+## payload, and tag the `family`. Mirrors configure() but for the effect fields; the spawner sets the
+## horizontal slot (span_min/max + position.x) separately, exactly as it does for a math gate.
+func configure_effect(eid: String, params: Dictionary, fam: int) -> void:
+	effect_id = eid
+	effect_params = params
+	family = fam
 
 
 func is_positive() -> bool:
@@ -117,6 +160,13 @@ func trigger(count: int) -> int:
 		if _panel != null:
 			_panel.modulate = Palette.GATE_NEGATIVE
 		return count
+	# Non-arithmetic effect gate (the dispatch seam): route to GameState's handler table and do
+	# NO economy math (count is returned unchanged). The hijack-block above still guards both paths.
+	if effect_id != "":
+		Events.gate_effect.emit(effect_id, effect_params, global_position)
+		if _panel != null:
+			_panel.modulate = Palette.FLASH_WHITE
+		return count
 	var new_count := maxi(0, apply(count))
 	Events.gate_passed.emit(_op_string(), value, new_count)
 	if _panel != null:
@@ -133,21 +183,63 @@ func _op_string() -> String:
 	return "?"
 
 
-func _polarity_color() -> Color:
-	match operation:
-		Operation.MULTIPLY: return Palette.GATE_MULTIPLY
-		Operation.ADD: return Palette.GATE_ADD
-	return Palette.GATE_NEGATIVE
+## The FAMILY this gate's op belongs to (#86): Add/Mul open the stream → SPRAY_AUG; Sub/Div focus it
+## → LANCE_AUG. Keeps the math gates inside the family taxonomy so a +/× reads green and a −/÷ reads
+## cyan, matching the stance they set. Effect gates set `family` directly via configure_effect.
+func _family_for_op() -> int:
+	return Family.SPRAY_AUG if is_positive() else Family.LANCE_AUG
+
+
+## HDR ring-frame hue for `fam` (#86) — the additive/textured colour the bloom catches. All five sit
+## outside the enemy RED→MAGENTA→VIOLET band (green / cyan / amber / teal / orange). Unknown → SPRAY.
+static func _family_color(fam: int) -> Color:
+	match fam:
+		Family.SPRAY_AUG: return Palette.GATE_FAMILY_SPRAY
+		Family.LANCE_AUG: return Palette.GATE_FAMILY_LANCE
+		Family.GEOM: return Palette.GATE_FAMILY_GEOM
+		Family.UTILITY: return Palette.GATE_FAMILY_UTILITY
+		Family.DEVIL: return Palette.GATE_FAMILY_DEVIL
+	return Palette.GATE_FAMILY_SPRAY
+
+
+## Wrong-stance GHOSTING (#86) — a pure setter the spawner calls each frame. When `on`, DESATURATE +
+## DIM the panel + label so a gate the current stance can't use recedes (appearance only — steering
+## still decides which gate trigger()s). When off, restore the family hue / crisp digits. Idempotent.
+## IMPORTANT: once the gate has fired, this is a NO-OP so the trigger() FLASH_WHITE always wins — even
+## if the spawner ghosts after the same frame's trigger (a mismatched gate the ship steered through).
+func set_ghosted(on: bool) -> void:
+	if has_been_triggered:
+		return
+	if on == _ghosted and _panel != null:
+		return
+	_ghosted = on
+	if _panel == null:
+		return                                   # visuals not built yet (headless / pre-_ready)
+	if on:
+		# Pull the family hue toward a dim grey: lerp to grey desaturates, the 0.45 scale dims it
+		# below the bloom threshold so a ghosted ring barely glows.
+		var c: Color = _family_color(family)
+		var lum: float = (c.r + c.g + c.b) / 3.0
+		_panel.modulate = Color(lum, lum, lum, 1.0).lerp(c, 0.35) * 0.45
+		_label.modulate = Palette.HUD_WHITE * 0.4
+	else:
+		_panel.modulate = _family_color(family)
+		_label.modulate = Palette.HUD_WHITE
 
 
 # --- Visuals -----------------------------------------------------------------
 
 func _ready() -> void:
+	# Math gates derive their family from the op so the +/×/−/÷ keep a coherent look; effect gates
+	# already carry an explicit family from configure_effect. (Done here, not in configure(), so a bare
+	# `.new()` headless gate never needs the enum and tests stay logic-only.)
+	if effect_id == "":
+		family = _family_for_op()
 	_panel = Sprite2D.new()
 	_panel.name = "Panel"
-	_panel.texture = _make_frame_texture()
+	_panel.texture = _family_texture(family)
 	_panel.scale = BOX / Vector2(_panel.texture.get_size())
-	_panel.modulate = _polarity_color()
+	_panel.modulate = _family_color(family)
 	var mat := CanvasItemMaterial.new()
 	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 	_panel.material = mat
@@ -166,19 +258,99 @@ func _ready() -> void:
 	add_child(_label)
 
 
-## A glowing rectangular frame: bright border band fading inward, transparent core,
-## so additive blending reads as a neon-bordered panel. Tolerant of being scaled.
-func _make_frame_texture() -> ImageTexture:
+## STATIC per-family ring-frame texture cache (#86). The five family silhouettes are pixel-identical
+## across every gate of that family, so we generate each ImageTexture ONCE here and share it — never
+## per-gate (a gate every few metres × a 96² Image.set_pixel loop would churn). Keyed by Family enum.
+static var _family_textures: Dictionary = {}
+
+
+## The shared ring-frame texture for `fam`, building + caching it on first use (#86). White RGB so the
+## per-gate `_panel.modulate` tints it to the family hue; the silhouette + transparent core live in the
+## alpha. Every family gets a distinct OUTER SHAPE; the core stays alpha~0 so additive bloom can't blur
+## it — that hard negative-space core is the glow-safe design (a transparent pixel emits nothing).
+static func _family_texture(fam: int) -> ImageTexture:
+	if _family_textures.has(fam):
+		return _family_textures[fam]
+	var tex := _make_frame_texture(fam)
+	_family_textures[fam] = tex
+	return tex
+
+
+## Build one family's ring-frame: a BRIGHT NEON RING tracing the family's outer silhouette with a
+## DARK/TRANSPARENT NEGATIVE-SPACE CORE. Per family the silhouette differs (wide ring / narrow-tall /
+## hex / octagon / barbed); shared machinery is an SDF whose zero-level is that shape, with the ring
+## as a band around |sdf| and alpha falling to 0 inward (the core never emits). White RGB, tint at draw.
+static func _make_frame_texture(fam: int) -> ImageTexture:
 	var n := 96
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
-	var border := 0.16                      # border band as a fraction of the size
+	var band := 0.10                        # ring half-thickness in normalised SDF units
 	for y in n:
 		for x in n:
-			var fx: float = float(x) / (n - 1)
-			var fy: float = float(y) / (n - 1)
-			# distance to the nearest edge, normalised 0 (edge) .. 0.5 (center)
-			var edge: float = minf(minf(fx, 1.0 - fx), minf(fy, 1.0 - fy))
-			var a: float = clampf((border - edge) / border, 0.0, 1.0)
-			a = a * a                       # tighten the band toward the rim
+			# Centred coords in [-1, 1]; p is the unit-square sample point.
+			var p := Vector2(float(x) / (n - 1) * 2.0 - 1.0, float(y) / (n - 1) * 2.0 - 1.0)
+			# Signed distance to the family silhouette boundary (<0 inside, 0 on the rim, >0 outside).
+			var d: float = _family_sdf(fam, p)
+			# Ring band: brightest on the rim (|d| small), fading to 0 by `band`. Squaring tightens it.
+			var a: float = clampf((band - absf(d)) / band, 0.0, 1.0)
+			a = a * a
+			# Hard negative-space core: anything well inside the shape stays fully transparent so the
+			# additive bloom leaves the centre crisp (no glow bleed across the dark core).
+			if d < -band:
+				a = 0.0
 			img.set_pixel(x, y, Color(1, 1, 1, a))
 	return ImageTexture.create_from_image(img)
+
+
+## Signed distance from unit-square point `p` (∈[-1,1]²) to family `fam`'s outer silhouette: negative
+## inside, 0 on the rim, positive outside. Each family is a different primitive so the rims read as
+## distinct shapes through the bloom (#86): SPRAY_AUG a WIDE ring, LANCE_AUG a NARROW-TALL ring, GEOM a
+## HEXAGON, UTILITY an OCTAGON, DEVIL a BARBED ring (angular spikes — the reserved high-risk family).
+static func _family_sdf(fam: int, p: Vector2) -> float:
+	match fam:
+		Family.SPRAY_AUG:
+			# Wide rounded box (broad, short) — the open/spray silhouette.
+			return _sdf_box(p, Vector2(0.92, 0.62), 0.18)
+		Family.LANCE_AUG:
+			# Narrow + tall rounded box — the focused/converged silhouette.
+			return _sdf_box(p, Vector2(0.55, 0.92), 0.14)
+		Family.GEOM:
+			# Hexagon (6 sides) — the geometry family reads as a faceted gem.
+			return _sdf_ngon(p, 6, 0.86, 0.0)
+		Family.UTILITY:
+			# Octagon (8 sides) — rounder than the hex; the neutral utility silhouette.
+			return _sdf_ngon(p, 8, 0.86, 0.0)
+		Family.DEVIL:
+			# Barbed ring: an 8-point star (alternating long spikes / short notches) — angular + hostile,
+			# reserved for the Overclock high-risk family. Orange-tinted at draw, never red/magenta.
+			return _sdf_star(p, 8, 0.9, 0.5)
+	return _sdf_box(p, Vector2(0.92, 0.62), 0.18)
+
+
+## SDF of a rounded box: half-extents `b`, corner radius `r`. <0 inside.
+static func _sdf_box(p: Vector2, b: Vector2, r: float) -> float:
+	var q := Vector2(absf(p.x), absf(p.y)) - b + Vector2(r, r)
+	var outside := Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length()
+	return outside + minf(maxf(q.x, q.y), 0.0) - r
+
+
+## SDF of a regular `sides`-gon, circumradius `radius`, rotated by `rot` radians. <0 inside.
+static func _sdf_ngon(p: Vector2, sides: int, radius: float, rot: float) -> float:
+	var a: float = atan2(p.y, p.x) - rot
+	var seg: float = TAU / float(sides)
+	# Fold the angle into one wedge, then distance is along the wedge bisector.
+	var ha: float = seg * 0.5
+	var fold: float = absf(fposmod(a + ha, seg) - ha)
+	var apothem: float = radius * cos(ha)
+	return p.length() * cos(fold) - apothem
+
+
+## SDF of an `points`-point star: outer radius `outer`, inner radius `outer*inner`. <0 inside. Gives the
+## DEVIL family its barbed rim (spikes out, notches in) without per-vertex polygon work.
+static func _sdf_star(p: Vector2, points: int, outer: float, inner: float) -> float:
+	var a: float = atan2(p.y, p.x)
+	var seg: float = TAU / float(points)
+	var ha: float = seg * 0.5
+	var fold: float = absf(fposmod(a + ha, seg) - ha) / ha   # 0 at a spike tip, 1 at a notch
+	# Lerp the radius from outer (tip) to inner notch across the wedge — an angular barbed boundary.
+	var rad: float = lerpf(outer, outer * inner, fold)
+	return p.length() - rad
