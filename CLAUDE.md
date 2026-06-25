@@ -50,6 +50,20 @@ dev box. Godot is at `~/.local/bin/godot`.
   Additive blending still works (overlapping orbs read white-hot), but **the actual glow + performance
   can only be confirmed on the iPhone/Simulator (#47)** — that is the real visual/perf surface, not a
   nicety. Don't trust this box for either.
+- **LOCAL GLOW PREVIEW — the M2 MacBook Air (session 24).** The blind-visual-loop fix: the dev's
+  **MacBook Air (`macbook-air` in `~/.ssh/config`, Tailscale, key-auth, M2/arm64, macOS 15.7)** renders
+  Godot's bloom **natively via Metal** (`Forward Mobile`, Apple M2) with **none** of the mini's
+  `Couldn't create Vulkan compute pipelines` errors. Same Godot build installed there (`4.7.stable`,
+  hash `5b4e0cb0f`, universal). **Division of labour: BUILD + headless-validate on the mini; SEE the
+  glow on the Air; TestFlight on iPhone stays the final on-device check.** Loop (~12s):
+  **`tools/sync-to-air.sh`** rsyncs the live WORKING TREE (not git — mid-session edits are uncommitted)
+  mini→Air, excludes `.git/`/`build/`/`.godot/`, and reimports there. Then on the Air either press **F5**
+  in the open editor or run `~/.local/bin/godot --path ~/Documents/neon-runner res://assets/ui/boot.tscn`.
+  A GUI app launched over SSH **does** reach the Air's window server while the dev is logged in — so the
+  agent can even autonomously launch the game / capture a `tools/screenshot.gd` PNG on the Air (the mini
+  can't). NOTE: the **iOS Simulator is NOT set up** on the Air (no runtimes/templates) and wouldn't show
+  better glow than native Play (same Metal GPU) — only iOS chrome; defer it. The M2 Air could also build
+  iOS cleanly, so it's a candidate to eventually retire the Intel mini's toolchain gymnastics.
 - **iOS toolchain — RESOLVED on this mini (session 6).** Godot 4.7's iOS `libgodot.a` references iOS-26
   Metal/QuartzCore symbols (`MTLTensorDomain`, `CADynamicRange*`) absent from older SDKs, so **Xcode 16.4
   (iOS 18.5 SDK) couldn't link it** ("Undefined symbols for architecture arm64"). The fix did **NOT** need

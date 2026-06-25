@@ -33,8 +33,12 @@ extends CanvasLayer
 const TOGGLE_ACTION := "perf_overlay"
 const TOGGLE_KEYCODE := KEY_F3
 
-# Panel layout (top-left, under any safe-area; small mono readout).
-const PANEL_POS := Vector2(24.0, 320.0)
+# Panel layout (#35): pinned BOTTOM-RIGHT, right-aligned, small mono readout. PANEL_MARGIN insets
+# it from the corner (x = right edge, y = bottom edge — the bottom margin clears the home indicator
+# / gesture bar on modern iPhones). PANEL_HEIGHT just reserves a tall-enough box for the 6 lines; the
+# text is bottom-aligned inside it, so the readout's bottom-right corner sits at the inset corner.
+const PANEL_MARGIN := Vector2(24.0, 140.0)
+const PANEL_HEIGHT := 400.0
 const FONT_SIZE := 22
 
 # Pure monitor descriptors: {label, monitor, kind}. `kind` selects the formatter so the verify
@@ -60,7 +64,19 @@ func _ready() -> void:
 	layer = 110   # above HUD(50)/milestone(60)/pause(100)
 	_label = Label.new()
 	_label.name = "PerfLabel"
-	_label.position = PANEL_POS
+	# Anchor a full-width box along the bottom edge, then right- + bottom-align the text so the
+	# readout hugs the bottom-right corner (inset by PANEL_MARGIN) regardless of how wide the metric
+	# values get. Anchors are relative to the root viewport (CanvasLayer gives no rect of its own).
+	_label.anchor_left = 0.0
+	_label.anchor_top = 1.0
+	_label.anchor_right = 1.0
+	_label.anchor_bottom = 1.0
+	_label.offset_left = PANEL_MARGIN.x
+	_label.offset_top = -PANEL_HEIGHT
+	_label.offset_right = -PANEL_MARGIN.x
+	_label.offset_bottom = -PANEL_MARGIN.y
+	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	if Fonts.arcade != null:
 		_label.add_theme_font_override("font", Fonts.arcade)
 	_label.add_theme_font_size_override("font_size", FONT_SIZE)

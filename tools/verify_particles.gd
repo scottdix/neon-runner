@@ -96,6 +96,34 @@ func _initialize() -> void:
 	fx.call("_on_spawn_particles", Vector2(540, 960), "garbage")
 	lines.append("handlers: enemy_destroyed/gate_passed(+/-)/spawn_particles ran without error (no GPU)")
 
+	# === 4) #37 the particle budget IS consulted by the fire path =============
+	# _emit now clamps each burst to the headroom under ParticleBudget.TOTAL_VISIBLE_CAP via
+	# _granted_amount (the SAME seam _emit calls). Assert it grants the full burst with room,
+	# clamps near the cap, and drops to 0 at the cap.
+	var BudgetS: GDScript = load("res://assets/effects/particle_budget.gd")
+	if BudgetS == null:
+		lines.append("RESULT=FAIL (particle_budget.gd missing)"); _write(lines); return
+	var cap: int = BudgetS.TOTAL_VISIBLE_CAP
+	var g_room: int = int(fx.call("_granted_amount", 0))           # full burst, plenty of room
+	var g_edge: int = int(fx.call("_granted_amount", cap - 10))    # only 10 left → clamp to 10
+	var g_full: int = int(fx.call("_granted_amount", cap))         # no headroom → 0 (drop)
+	lines.append("budget seam: grant(0)=%d grant(cap-10)=%d grant(cap)=%d (want %d,10,0)" % [
+		g_room, g_edge, g_full, EffectS.BURST_AMOUNT])
+	if g_room != EffectS.BURST_AMOUNT or g_edge != 10 or g_full != 0:
+		lines.append("budget FAIL: _emit's grant seam does not clamp to the cap"); ok = false
+
+	# Structural: the whole pool firing at once stays under the cap (defensive headroom), the live
+	# estimate is 0 on a pool-less instance, and the shared particle texture fits the budget.
+	var pool_max: int = EffectS.POOL_SIZE * EffectS.BURST_AMOUNT
+	if pool_max > cap:
+		lines.append("budget FAIL: POOL_SIZE*BURST_AMOUNT=%d exceeds cap %d" % [pool_max, cap]); ok = false
+	if int(fx.call("_active_estimate", 0)) != 0:
+		lines.append("budget FAIL: live estimate nonzero on a pool-less instance"); ok = false
+	if not BudgetS.texture_ok(EffectS.PARTICLE_TEX_SIZE):
+		lines.append("budget FAIL: particle texture %dpx exceeds budget" % EffectS.PARTICLE_TEX_SIZE); ok = false
+	lines.append("budget: consulted by _emit; pool max %d < cap %d; texture %dpx OK; estimate(0)=0" % [
+		pool_max, cap, EffectS.PARTICLE_TEX_SIZE])
+
 	lines.append("RESULT=%s" % ("PASS" if ok else "FAIL"))
 	_write(lines)
 

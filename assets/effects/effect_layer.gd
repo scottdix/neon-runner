@@ -32,6 +32,14 @@ const KIND_DECIMATE := "decimate"     # #20 negative gate — red downward puff
 # Pool size: round-robined so concurrent kills/crossings don't stomp each other mid-emit.
 const POOL_SIZE := 14
 const PARTICLE_TEX_SIZE := 24
+const BURST_AMOUNT := 24   # particles per one-shot emitter (single source; _make_emitter reads it)
+
+# #37: the mobile particle budget the fire path consults before each burst so the live count
+# stays under ParticleBudget.TOTAL_VISIBLE_CAP (1000). POOL_SIZE * BURST_AMOUNT (14*24=336) already
+# sits well under that cap, so the clamp is DEFENSIVE — it only bites if the pool/amount ever grow —
+# but _emit now actually enforces the policy instead of leaving it a unit-tested island (the gap
+# #37's verify flagged). Loaded as a script (no autoload / class_name); all methods are static.
+const ParticleBudget := preload("res://assets/effects/particle_budget.gd")
 
 # Where a gate crossing visually happens: the ship line y. Run overrides this via
 # set_crossing_y(); the design default keeps the layer sane if it's ever used standalone.
@@ -42,6 +50,13 @@ var _ship_x: float = 540.0
 var _pool: Array[GPUParticles2D] = []
 var _next: int = 0
 var _shared_tex: Texture2D
+
+# #37 live-particle accounting: per-emitter granted count + burst expiry (ms). _active_estimate
+# sums only the still-alive bursts so _emit can clamp the next request to the cap's headroom.
+# Sized in _ready; EMPTY on a bare .new() (no _ready under headless `-s`) → estimate 0, so the
+# verify path stays untouched and the GPU code below no-ops.
+var _emit_amount: PackedInt32Array = PackedInt32Array()
+var _emit_expire_ms: PackedInt64Array = PackedInt64Array()
 
 
 func _ready() -> void:
@@ -54,6 +69,9 @@ func _ready() -> void:
 		var p := _make_emitter()
 		add_child(p)
 		_pool.append(p)
+	# #37: size the live-particle trackers to the pool (zero-filled = nothing alive yet).
+	_emit_amount.resize(POOL_SIZE)
+	_emit_expire_ms.resize(POOL_SIZE)
 
 	Events.enemy_destroyed.connect(_on_enemy_destroyed)
 	Events.gate_passed.connect(_on_gate_passed)
@@ -134,6 +152,24 @@ func _next_emitter_index() -> int:
 	return idx
 
 
+## #37: how many particles the next burst may fire given how many are already alive — the budget
+## seam _emit consults. PURE (ParticleBudget.grant is static): clamps BURST_AMOUNT to the headroom
+## under TOTAL_VISIBLE_CAP. live >= cap → 0 (drop the burst). The verify asserts this seam directly.
+func _granted_amount(live_count: int) -> int:
+	return ParticleBudget.grant(live_count, BURST_AMOUNT)
+
+
+## #37: estimate the particles still alive at `now_ms` — sum the granted amount of every emitter
+## whose burst hasn't expired. PURE given the clock + tracking arrays; returns 0 on a bare .new()
+## (empty arrays, no _ready), so the headless verify path is untouched.
+func _active_estimate(now_ms: int) -> int:
+	var total := 0
+	for i in _emit_amount.size():
+		if _emit_expire_ms[i] > now_ms:
+			total += _emit_amount[i]
+	return total
+
+
 ## Positive economy op? add / multiply grow the swarm (collect pop); subtract / divide shrink it
 ## (decimate puff). Matches gate.gd's _op_string() vocabulary ("add"/"subtract"/"multiply"/"divide").
 func _is_positive_op(gate_type: String) -> bool:
@@ -152,6 +188,21 @@ func _emit(pos: Vector2, burst: Dictionary, scale: float) -> void:
 	var p: GPUParticles2D = _pool[idx]
 	if p == null:
 		return
+	# #37: consult the particle budget before firing so the live count stays under the mobile cap.
+	# Release THIS emitter's prior burst first (it's being re-fired, so it no longer counts), estimate
+	# what's still alive, and clamp the request to the remaining headroom. granted<=0 → at the cap:
+	# drop the burst rather than blow the budget. (In practice the 14*24 pool never reaches 1000, so
+	# this is defensive; it keeps the policy honestly enforced if the pool/amount ever grow.)
+	if idx < _emit_amount.size():
+		_emit_amount[idx] = 0
+	var now_ms: int = Time.get_ticks_msec()
+	var granted: int = _granted_amount(_active_estimate(now_ms))
+	if granted <= 0:
+		return
+	if idx < _emit_amount.size():
+		_emit_amount[idx] = granted
+		_emit_expire_ms[idx] = now_ms + int(p.lifetime * 1000.0)
+	p.amount = granted
 	p.position = pos
 	p.modulate = burst["color"]
 	p.scale = Vector2(scale, scale)
@@ -183,7 +234,7 @@ func _make_emitter() -> GPUParticles2D:
 	p.texture = _shared_tex
 	p.one_shot = true
 	p.explosiveness = 1.0          # all particles at t=0 — a single punch, not a stream
-	p.amount = 24
+	p.amount = BURST_AMOUNT        # #37: per-burst budget — _emit may clamp this lower under the cap
 	p.lifetime = 0.55
 	p.emitting = false             # idle until _emit restarts it
 	p.local_coords = false         # particles live in world space so they don't ride a re-pointed emitter
